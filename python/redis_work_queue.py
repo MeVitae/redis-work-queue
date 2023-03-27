@@ -183,12 +183,12 @@ class WorkQueue(object):
                 self._main_queue_key,
                 self._processing_key,
                 timeout=timeout,
-            ).decode('utf-8')
+            )
         else:
             maybe_item_id: bytes | str | None = db.rpoplpush(
                 self._main_queue_key,
                 self._processing_key,
-            ).decode('utf-8')
+            )
 
         if maybe_item_id is None:
             return None
