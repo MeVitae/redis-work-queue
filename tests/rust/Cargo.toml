@@ -1,0 +1,13 @@
+[package]
+name = "rust-tests"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+redis-work-queue = { path = "../../rust" }
+futures-lite = "1"
+redis = "0.22"
+serde = "1"
+serde_json = "1"

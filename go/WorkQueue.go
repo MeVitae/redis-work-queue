@@ -1,0 +1,136 @@
+package workqueue
+
+import (
+	"context"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
+)
+
+const never time.Duration = 0
+
+// WorkQueue backed by a redis database.
+type WorkQueue struct {
+	// session is a unique ID for this instance
+	session string
+	// mainQueueKey is the key for the list of items in the queue
+	mainQueueKey string
+	/// processingKey is the key for the list of items being processed
+	processingKey string
+	// leaseKey is the  key prefix for lease entries
+	leaseKey KeyPrefix
+	// itemDataKey is the key prefix for item data
+	itemDataKey KeyPrefix
+}
+
+func NewWorkQueue(name KeyPrefix) WorkQueue {
+	return WorkQueue{
+		session:       uuid.NewString(),
+		mainQueueKey:  name.Of(":queue"),
+		processingKey: name.Of(":processing"),
+		leaseKey:      name.Concat(":leased_by_session:"),
+		itemDataKey:   name.Concat(":item:"),
+	}
+}
+
+// AddItemToPipeline adds an item to the work queue. This adds the redis commands onto the pipeline passed.
+//
+// Use `WorkQueue.AddItem` if you don't want to pass a pipeline directly.
+func (workQueue *WorkQueue) AddItemToPipeline(ctx context.Context, pipeline redis.Pipeliner, item Item) {
+	// Add the item data
+	// NOTE: it's important that the data is added first, otherwise someone could pop the item
+	// before the data is ready
+	pipeline.Set(ctx, workQueue.itemDataKey.Of(item.ID), item.Data, never)
+	// Then add the id to the work queue
+	pipeline.LPush(ctx, workQueue.mainQueueKey, item.ID)
+}
+
+// AddItem to the work queue.
+//
+// This creates a pipeline and executes it on the database.
+func (workQueue *WorkQueue) AddItem(ctx context.Context, db *redis.Client, item Item) error {
+	pipeline := db.Pipeline()
+	workQueue.AddItemToPipeline(ctx, pipeline, item)
+	_, err := pipeline.Exec(ctx)
+	return err
+}
+
+// Return the length of the work queue (not including items being processed, see
+// `WorkQueue.Processing`).
+func (workQueue *WorkQueue) QueueLen(ctx context.Context, db *redis.Client) (int64, error) {
+	return db.LLen(ctx, workQueue.mainQueueKey).Result()
+}
+
+// Processing returns the number of items being processed.
+func (workQueue *WorkQueue) Processing(ctx context.Context, db *redis.Client) (int64, error) {
+	return db.LLen(ctx, workQueue.processingKey).Result()
+}
+
+// Request a work lease the work queue. This should be called by a worker to get work to complete.
+// When completed, the `complete` method should be called.
+//
+// If `block` is true, the function will return either when a job is leased or after `timeout` if
+// `timeout` isn't 0.
+//
+// If the job is not completed before the end of `lease_duration`, another worker may pick up the
+// same job. It is not a problem if a job is marked as `done` more than once.
+func (workQueue *WorkQueue) Lease(
+	ctx context.Context,
+	db *redis.Client,
+	block bool,
+	timeout time.Duration,
+	leaseDuration time.Duration,
+) (*Item, error) {
+	// First, to get an item, we try to move an item from the main queue to the processing list.
+	var command *redis.StringCmd
+	if block {
+		command = db.BRPopLPush(ctx, workQueue.mainQueueKey, workQueue.processingKey, timeout)
+	} else {
+		command = db.RPopLPush(ctx, workQueue.mainQueueKey, workQueue.processingKey)
+	}
+	itemId, err := command.Result()
+	if itemId == "" || err != nil {
+		// A nil error indicates a timeout if we were blocking
+		if block && err == redis.Nil {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	// Get the item's data
+	data, err := db.Get(ctx, workQueue.itemDataKey.Of(itemId)).Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	// Now setup the lease item.
+	// NOTE: Racing for a lease is ok
+	err = db.SetEx(ctx, workQueue.leaseKey.Of(itemId), workQueue.session, leaseDuration).Err()
+
+	return &Item{
+		ID:   itemId,
+		Data: data,
+	}, err
+}
+
+// Complete marks a job as completed and removes it from the work queue.
+//
+// This returns a boolean indicating if this worker was the first worker to call `Complete`.  So,
+// while `lease` might give the same job to multiple workers, `Complete` will return `true` for only
+// one worker.
+func (workQueue *WorkQueue) Complete(ctx context.Context, db *redis.Client, item *Item) (bool, error) {
+	removed, err := db.LRem(ctx, workQueue.processingKey, 0, item.ID).Result()
+	if removed == 0 || err != nil {
+		return false, err
+	}
+    // If we did actually remove it, delete the item data and lease.
+    // If we didn't really remove it, it's probably been returned to the work queue so the data is
+    // still needed and the lease might not be ours (if it is still ours, it'll expire anyway).
+	_, err = db.Pipelined(ctx, func(pipeline redis.Pipeliner) error {
+		pipeline.Del(ctx, workQueue.itemDataKey.Of(item.ID))
+		pipeline.Del(ctx, workQueue.leaseKey.Of(item.ID))
+		return nil
+	})
+	return true, err
+}
