@@ -36,7 +36,7 @@ async fn async_main() -> RedisResult<()> {
     let rust_results_key = KeyPrefix::new("results:rust:".to_string());
     let shared_results_key = KeyPrefix::new("results:shared:".to_string());
 
-    let rust_queue = WorkQueue::new(KeyPrefix::new("go_jobs".to_string()));
+    let rust_queue = WorkQueue::new(KeyPrefix::new("rust_jobs".to_string()));
     let shared_queue = WorkQueue::new(KeyPrefix::new("shared_jobs".to_string()));
 
     let mut rust_job_counter = 0;
@@ -49,13 +49,20 @@ async fn async_main() -> RedisResult<()> {
             shared_job_counter += 1;
 
             // First, try to get a job from the shared job queue
+			let timeout = if shared_job_counter%5 == 0 {
+                Some(Duration::from_secs(1))
+            } else {
+                Some(Duration::ZERO)
+            };
+            println!("Leasing from shared with timeout: {:?}", timeout);
             let Some(job) = shared_queue.lease(
                 db,
-                Some(Duration::from_secs(4)),
+                timeout,
                 Duration::from_secs(2),
             ).await? else { continue };
             // Also, if we get 'unlucky', crash while completing the job.
             if shared_job_counter % 7 == 0 {
+                println!("Dropping job");
                 continue;
             }
 
@@ -69,28 +76,41 @@ async fn async_main() -> RedisResult<()> {
                 worker: "rust".to_string(),
             };
             let result_json = serde_json::to_string(&result).unwrap();
+            println!("Result: {result_json}");
             // Pretend it takes us a while to compute the result
             // Sometimes this will take too long and we'll timeout
-            std::thread::sleep(Duration::from_secs(shared_job_counter % 7));
+            if shared_job_counter % 12 == 0 {
+                std::thread::sleep(Duration::from_secs(shared_job_counter % 4));
+            }
 
             // Store the result
             db.set(shared_results_key.of(&job.id), result_json).await?;
 
             // Complete the job unless we're 'unlucky' and crash again
             if shared_job_counter % 29 != 0 {
+                println!("Completing");
                 shared_queue.complete(db, &job).await?;
+            } else {
+                println!("Dropping");
             }
         } else {
             rust_job_counter += 1;
 
             // First, try to get a job from the rust job queue
+			let timeout = if shared_job_counter%6 == 0 {
+                Some(Duration::from_secs(2))
+            } else {
+                Some(Duration::ZERO)
+            };
+            println!("Leasing from rust with timeout: {:?}", timeout);
             let Some(job) = rust_queue.lease(
                 db,
-                Some(Duration::from_secs(2)),
+                timeout,
                 Duration::from_secs(1),
             ).await? else { continue };
             // Also, if we get 'unlucky', crash while completing the job.
             if rust_job_counter % 7 == 0 {
+                println!("Dropping job");
                 continue;
             }
 
@@ -98,9 +118,10 @@ async fn async_main() -> RedisResult<()> {
             assert_eq!(job.data.len(), 1);
             // Generate the response
             let result: u8 = job.data[0].wrapping_mul(7);
+            println!("Result: {result}");
             // Pretend it takes us a while to compute the result
             // Sometimes this will take too long and we'll timeout
-            if rust_job_counter % 11 == 0 {
+            if rust_job_counter % 25 == 0 {
                 std::thread::sleep(Duration::from_secs(rust_job_counter % 20));
             }
 
@@ -109,7 +130,9 @@ async fn async_main() -> RedisResult<()> {
 
             // Complete the job unless we're 'unlucky' and crash again
             if rust_job_counter % 29 != 0 {
+                println!("Completing");
                 if rust_queue.complete(db, &job).await? {
+                    println!("Spawning shared jobs");
                     // If we succesfully completed the result, create two new shared jobs.
                     let item = Item::from_json_data(&SharedJobData {
                         a: 3,
@@ -125,6 +148,8 @@ async fn async_main() -> RedisResult<()> {
                     .unwrap();
                     shared_queue.add_item(db, &item).await?;
                 }
+            } else {
+                println!("Dropping");
             }
         }
     }

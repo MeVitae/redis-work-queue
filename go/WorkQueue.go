@@ -75,6 +75,8 @@ func (workQueue *WorkQueue) Processing(ctx context.Context, db *redis.Client) (i
 //
 // If the job is not completed before the end of `lease_duration`, another worker may pick up the
 // same job. It is not a problem if a job is marked as `done` more than once.
+//
+// If no job is available before the timeout, `nil, nil` is returned.
 func (workQueue *WorkQueue) Lease(
 	ctx context.Context,
 	db *redis.Client,
@@ -91,8 +93,8 @@ func (workQueue *WorkQueue) Lease(
 	}
 	itemId, err := command.Result()
 	if itemId == "" || err != nil {
-		// A nil error indicates a timeout if we were blocking
-		if block && err == redis.Nil {
+		// A nil error indicates no job available
+		if err == redis.Nil {
 			return nil, nil
 		}
 		return nil, err

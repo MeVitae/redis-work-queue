@@ -27,10 +27,13 @@ while True:
         shared_job_counter += 1
 
         # First, try to get a job from the shared job queue
-        job = shared_queue.lease(db, 2, timeout=4)
+        block = shared_job_counter%5 == 0
+        print("Leasing shared with block = {}".format(block))
+        job = shared_queue.lease(db, 2, timeout=1, block=block)
         # If there was no job, continue.
         # Also, if we get 'unlucky', crash while completing the job.
         if job is None or shared_job_counter % 7 == 0:
+            print("Dropping job: {}".format(job))
             continue
 
         # Parse the data
@@ -43,24 +46,32 @@ while True:
             'worker': 'python',
         }
         result_json = json.dumps(result)
+        print("Result:", result_json)
         # Pretend it takes us a while to compute the result
         # Sometimes this will take too long and we'll timeout
-        sleep(shared_job_counter % 7)
+        if shared_job_counter % 12 == 0:
+            sleep(shared_job_counter % 4)
 
         # Store the result
         db.set(shared_results_key.of(job.id()), result_json)
 
         # Complete the job unless we're 'unlucky' and crash again
         if shared_job_counter % 29 != 0:
+            print("Completing")
             shared_queue.complete(db, job)
+        else:
+            print("Dropping")
     else:
         python_job_counter += 1
 
         # First, try to get a job from the python job queue
-        job = python_queue.lease(db, 1, timeout=2)
+        block = shared_job_counter%6 == 0
+        print("Leasing python with block = {}".format(block))
+        job = python_queue.lease(db, 1, timeout=2, block=block)
         # If there was no job, continue.
         # Also, if we get 'unlucky', crash while completing the job.
         if job is None or python_job_counter % 7 == 0:
+            print("Dropping job: {}".format(job))
             continue
 
         # Check the data is a sinle byte
@@ -68,9 +79,10 @@ while True:
         assert len(data) == 1
         # Generate the response
         result = (data[0]*3) % 256
+        print("Result:", result)
         # Pretend it takes us a while to compute the result
         # Sometimes this will take too long and we'll timeout
-        if python_job_counter % 11 == 0:
+        if python_job_counter % 25 == 0:
             sleep(python_job_counter % 20)
 
         # Store the result
@@ -78,8 +90,10 @@ while True:
 
         # Complete the job unless we're 'unlucky' and crash again
         if python_job_counter % 29 != 0:
+            print("Completing")
             # If we succesfully completed the result, create two new shared jobs.
             if python_queue.complete(db, job):
+                print("Spawning shared jobs")
                 shared_queue.add_item(db, Item.from_json_data({
                     'a': 13,
                     'b': result,
@@ -88,3 +102,5 @@ while True:
                     'a': 17,
                     'b': result,
                 }))
+        else:
+            print("Dropping")

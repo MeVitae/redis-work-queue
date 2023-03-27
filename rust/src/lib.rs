@@ -177,13 +177,20 @@ impl WorkQueue {
         lease_duration: Duration,
     ) -> RedisResult<Option<Item>> {
         // First, to get an item, we try to move an item from the main queue to the processing list.
-        let item_id: Option<String> = db
-            .brpoplpush(
-                &self.main_queue_key,
-                &self.processing_key,
-                timeout.map(|d| d.as_secs() as usize).unwrap_or(0),
-            )
-            .await?;
+        let item_id: Option<String> = match timeout {
+            Some(Duration::ZERO) => {
+                db.rpoplpush(&self.main_queue_key, &self.processing_key)
+                    .await?
+            }
+            _ => {
+                db.brpoplpush(
+                    &self.main_queue_key,
+                    &self.processing_key,
+                    timeout.map(|d| d.as_secs() as usize).unwrap_or(0),
+                )
+                .await?
+            }
+        };
 
         // If we got an item, fetch the associated data.
         let item = match item_id {
