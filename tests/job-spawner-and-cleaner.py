@@ -40,5 +40,6 @@ while True:
         python_queue.light_clean(db)
         rust_queue.light_clean(db)
         go_queue.light_clean(db)
+        shared_queue.light_clean(db)
     counter += 1
 
