@@ -2,7 +2,7 @@ namespace RedisWorkerQueueTests;
 
 using Newtonsoft.Json;
 using RedisWorkQueue;
-using ServiceStack.Redis;
+using FreeRedis;
 
 [TestClass]
 public class RedisWorkerQueueTests
@@ -23,9 +23,7 @@ public class RedisWorkerQueueTests
     [TestMethod]
     public void TestRedisWorkerQueue()
     {
-        RedisManagerPool manager = new RedisManagerPool("localhost:6379");
-
-        var db = manager.GetClient();
+        RedisClient db = new RedisClient("localhost:6379");
 
         var dotNetResultsKey = new KeyPrefix("results:dotnet");
         var sharedResultsKey = new KeyPrefix("results:shared");
@@ -49,7 +47,7 @@ public class RedisWorkerQueueTests
 
                 Console.WriteLine($"leasing shared with block = {block}");
 
-                var job = sharedQueue.Lease((IRedisNativeClient)db, 2, block, 1);
+                var job = sharedQueue.Lease(db, 2, block, 1);
 
                 if (job == null || sharedJobCounter % 7 == 0)
                 {
@@ -93,7 +91,7 @@ public class RedisWorkerQueueTests
 
                 Console.WriteLine($"leasing dotnet with block = {block}");
 
-                var job = dotNetQueue.Lease((IRedisNativeClient)db, 1, block, 2);
+                var job = dotNetQueue.Lease(db, 1, block, 2);
 
                 if (job == null || dotNetJobCounter % 7 == 0)
                 {

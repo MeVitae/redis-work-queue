@@ -1,6 +1,5 @@
 using System.Text;
-using ServiceStack.Redis;
-using ServiceStack.Redis.Pipeline;
+using FreeRedis;
 
 namespace RedisWorkQueue
 {
@@ -23,35 +22,39 @@ namespace RedisWorkQueue
             this.ItemDataKey = KeyPrefix.Concat(name, ":item:");
         }
 
-        public void AddItemToPipeline(IRedisPipeline pipeline, Item item)
-        {
-            pipeline.QueueCommand(p => p.Set(ItemDataKey.Of(item.ID), item.Data));
-            pipeline.QueueCommand(p => p.Custom("LPUSH", MainQueueKey, item.ID));
-        }
+        // public void AddItemToPipeline(PipelineHook pipeline, Item item)
+        // {
+        //     pipeline.QueueCommand(p => p.Set(ItemDataKey.Of(item.ID), item.Data));
+        //     pipeline.QueueCommand(p => p.Custom("LPUSH", MainQueueKey, item.ID));
+        // }
 
         public void AddItem(IRedisClient db, Item item)
         {
-            var pipeline = db.CreatePipeline();
-            AddItemToPipeline(pipeline, item);
-            pipeline.Flush();
+            using (var pipe = db.StartPipe())
+            {
+                pipe.Set(ItemDataKey.Of(item.ID), item.Data);
+                pipe.LPush(MainQueueKey, item.ID);
+
+                pipe.EndPipe();
+            }
         }
 
         public long QueueLength(IRedisClient db)
         {
-            return db.GetListCount(MainQueueKey);
+            return db.LLen(MainQueueKey);
         }
 
         public long Processing(IRedisClient db)
         {
-            return db.GetListCount(ProcessingKey);
+            return db.LLen(ProcessingKey);
         }
 
         public bool LeaseExists(IRedisClient db, string itemId)
         {
-            return db.ContainsKey(LeaseKey.Of(itemId));
+            return db.Exists(LeaseKey.Of(itemId));
         }
 
-        public Item? Lease(IRedisNativeClient db, int leaseSeconds, bool block, int timeout = 0)
+        public Item? Lease(IRedisClient db, int leaseSeconds, bool block, int timeout = 0)
         {
             object maybeItemId;
             if (block)
@@ -76,27 +79,31 @@ namespace RedisWorkQueue
             else
                 throw new Exception("item id from work queue not bytes or string");
 
-            var data = db.Get(ItemDataKey.Of(itemId));
+            var data = db.Get<byte[]>(ItemDataKey.Of(itemId));
             if (data == null)
                 data = new byte[0];
-            
+
             db.SetEx(LeaseKey.Of(itemId), leaseSeconds, Encoding.UTF8.GetBytes(Session));
 
             return new Item(data, itemId);
         }
 
-        public bool Complete(IRedisClient db, Item item){
-            var removed = db.RemoveItemFromList(ProcessingKey, item.ID, 0);
+        public bool Complete(IRedisClient db, Item item)
+        {
+            var removed = db.LRem(ProcessingKey, 0, item.ID);
 
-            if(removed == 0)
+            if (removed == 0)
                 return false;
 
             string itemId = item.ID;
 
-            var pipeline = db.CreatePipeline();
-            pipeline.QueueCommand(p => p.Delete(ItemDataKey.Of(itemId)));
-            pipeline.QueueCommand(p => p.Delete(LeaseKey.Of(itemId)));
-            pipeline.Flush();
+             using (var pipe = db.StartPipe())
+            {
+                pipe.Del(ItemDataKey.Of(itemId));
+                pipe.Del(LeaseKey.Of(itemId));
+
+                pipe.EndPipe();
+            }
 
             return true;
         }
