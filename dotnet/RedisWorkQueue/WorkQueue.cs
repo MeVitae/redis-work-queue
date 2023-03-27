@@ -22,12 +22,6 @@ namespace RedisWorkQueue
             this.ItemDataKey = KeyPrefix.Concat(name, ":item:");
         }
 
-        // public void AddItemToPipeline(PipelineHook pipeline, Item item)
-        // {
-        //     pipeline.QueueCommand(p => p.Set(ItemDataKey.Of(item.ID), item.Data));
-        //     pipeline.QueueCommand(p => p.Custom("LPUSH", MainQueueKey, item.ID));
-        // }
-
         public void AddItem(IRedisClient db, Item item)
         {
             using (var pipe = db.StartPipe())
@@ -60,12 +54,10 @@ namespace RedisWorkQueue
             if (block)
             {
                 maybeItemId = db.BRPopLPush(MainQueueKey, ProcessingKey, timeout);
-                //maybeItemId = db.Custom("BRPOPLPUSH", MainQueueKey, ProcessingKey, timeout);
             }
             else
             {
                 maybeItemId = db.RPopLPush(MainQueueKey, ProcessingKey);
-                //maybeItemId = db.Custom("RPOPLPUSH", MainQueueKey, ProcessingKey);
             }
 
             if (maybeItemId == null)
