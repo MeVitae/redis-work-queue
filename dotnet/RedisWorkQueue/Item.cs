@@ -4,7 +4,7 @@ using System.Runtime.Serialization.Formatters.Binary;
 using System.Text;
 using Newtonsoft.Json;
 
-namespace RedisWorkerQueue
+namespace RedisWorkQueue
 {
     public class Item
     {
@@ -27,13 +27,20 @@ namespace RedisWorkerQueue
                     byteData = ms.ToArray();
                 }
             }
+            else
+                byteData = (byte[])Data;
 
             if (ID == null)
                 ID = Guid.NewGuid().ToString();
             else if (!(ID is string))
                 ID = ID.ToString();
 
-            this.Data = (byte[])Data;
+            if (byteData == null)
+                throw new Exception("item failed to serialise data to byte[]");
+            this.Data = byteData;
+            if (ID == null)
+                throw new Exception("item failed to create ID");
+
             this.ID = (string)ID;
         }
 
@@ -42,9 +49,9 @@ namespace RedisWorkerQueue
             return new Item(JsonConvert.SerializeObject(data), id);
         }
 
-        public object DataJson()
+        public T DataJson<T>()
         {
-            return JsonConvert.DeserializeObject(Encoding.UTF8.GetString(Data));
+            return JsonConvert.DeserializeObject<T>(Encoding.UTF8.GetString(Data));
         }
     }
 }

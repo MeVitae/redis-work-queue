@@ -1,4 +1,4 @@
-namespace RedisWorkerQueue
+namespace RedisWorkQueue
 {
     public class KeyPrefix
     {
@@ -13,9 +13,9 @@ namespace RedisWorkerQueue
             return Prefix + name;
         }
 
-        public KeyPrefix Concat(string name)
+        public static KeyPrefix Concat(KeyPrefix prefix, string name)
         {
-            return new KeyPrefix(Of(name));
+            return new KeyPrefix(prefix.Of(name));
         }
     }
 }
