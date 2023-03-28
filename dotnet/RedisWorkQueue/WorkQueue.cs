@@ -89,7 +89,7 @@ namespace RedisWorkQueue
 
             string itemId = item.ID;
 
-             using (var pipe = db.StartPipe())
+            using (var pipe = db.StartPipe())
             {
                 pipe.Del(ItemDataKey.Of(itemId));
                 pipe.Del(LeaseKey.Of(itemId));
