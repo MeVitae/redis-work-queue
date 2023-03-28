@@ -41,7 +41,7 @@ namespace RedisWorkQueue
             this.ID = ID;
         }
 
-        public static Item FromJson(object data, object? id = null)
+        public static Item FromJson(object data, string? id = null)
         {
             return new Item(JsonConvert.SerializeObject(data), id);
         }
