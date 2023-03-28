@@ -17,8 +17,15 @@ sleep 1.8
 sleep 0.5
 rm "$GO_BIN"
 
+# Spawn 2 C# DotNet workers
+cd ../dotnet/RedisWorkQueueTests
+dotnet run -c Release localhost &
+sleep 1.9
+dotnet run -c Release localhost &
+sleep 0.5
+
 # Spawn 2 python workers
-cd ..
+cd ../..
 python3 python-tests.py localhost &
 sleep 1.45
 python3 python-tests.py localhost &
