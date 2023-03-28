@@ -1,4 +1,5 @@
 import sys
+import json
 from time import sleep
 
 import redis
@@ -9,6 +10,9 @@ from redis_work_queue import KeyPrefix, Item, WorkQueue
 if len(sys.argv) < 2:
     raise Exception("first command line argument must be redis host")
 db = redis.Redis(host=sys.argv[1])
+
+if len(db.keys("*")) > 0:
+    raise Exception("redis database isn't clean")
 
 python_queue = WorkQueue(KeyPrefix("python_jobs"))
 rust_queue = WorkQueue(KeyPrefix("rust_jobs"))
@@ -76,7 +80,14 @@ while doom_counter < 20:
 expecting_python = [(n * 3)%256 for n in range(0, 256*3)]
 expecting_rust = [(n * 7)%256 for n in range(0, 256*3)]
 expecting_go = [(n * 5)%256 for n in range(0, 256*3)]
-expecting_dotnet = [(n * 5)%256 for n in range(0, 256*3)]
+expecting_dotnet = [(n * 11)%256 for n in range(0, 256*3)]
+
+expecting_shared = [(a+b, a*b) for a in [3, 5] for b in expecting_rust] + \
+        [(a+b, a*b) for a in [7, 11] for b in expecting_go] + \
+        [(a+b, a*b) for a in [13, 17] for b in expecting_python] + \
+        [(a+b, a*b) for a in [19, 23] for b in expecting_dotnet]
+
+shared_counts = {}
 
 for key in db.keys("*"):
     key = key.decode('utf-8')
@@ -101,13 +112,30 @@ for key in db.keys("*"):
         assert len(results) == 1
         expecting_dotnet.remove(results[0])
     elif key.find('results:shared:') == 0:
-        #print('shared results')
-        # TODO: check these results
+        result = db.get(key)
+        assert result is not None
+        if isinstance(result, bytes):
+            result = result.decode('utf-8')
+        result = json.loads(result)
+        worker = result['worker']
+        if worker in shared_counts:
+            shared_counts[worker] += 1
+        else:
+            shared_counts[worker] = 1
+        expecting_shared.remove((result['sum'], result['prod']))
         pass
     else:
         raise Exception('found unexpected key: ' + key)
+
+print(shared_counts)
+
+for key in shared_counts.keys():
+    assert key in ['python', 'rust', 'go', 'dotnet']
+    # Check that it's fairly well balanced
+    assert shared_counts[key] < 1900
 
 assert len(expecting_python) == 0
 assert len(expecting_rust) == 0
 assert len(expecting_go) == 0
 assert len(expecting_dotnet) == 0
+assert len(expecting_shared) == 0
