@@ -10,7 +10,7 @@ namespace RedisWorkQueue
     {
         public byte[] Data { get; set; }
         public string ID { get; set; }
-        public Item(object Data, object? ID = null)
+        public Item(object Data, string? ID = null)
         {
             byte[] byteData;
             if (Data is string)
@@ -30,10 +30,7 @@ namespace RedisWorkQueue
             else
                 byteData = (byte[])Data;
 
-            if (ID == null)
-                ID = Guid.NewGuid().ToString();
-            else if (!(ID is string))
-                ID = ID.ToString();
+            if (ID == null) ID = Guid.NewGuid().ToString();
 
             if (byteData == null)
                 throw new Exception("item failed to serialise data to byte[]");
@@ -41,7 +38,7 @@ namespace RedisWorkQueue
             if (ID == null)
                 throw new Exception("item failed to create ID");
 
-            this.ID = (string)ID;
+            this.ID = ID;
         }
 
         public static Item FromJson(object data, object? id = null)
@@ -49,7 +46,7 @@ namespace RedisWorkQueue
             return new Item(JsonConvert.SerializeObject(data), id);
         }
 
-        public T DataJson<T>()
+        public T? DataJson<T>()
         {
             return JsonConvert.DeserializeObject<T>(Encoding.UTF8.GetString(Data));
         }
