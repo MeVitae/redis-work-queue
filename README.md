@@ -177,3 +177,8 @@ This includes items being worked on and abandoned items (see [Handling errors](#
 returned to the main queue.
 
 ## Under the hood
+
+## Testing
+
+The client implementations each have their own (very simple) unit tests. Most of the testing is done
+through the integrations tests, located in the [tests](./tests/) directory.
