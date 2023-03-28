@@ -25,8 +25,8 @@ public class RedisWorkerQueueTests
     {
         RedisClient db = new RedisClient("localhost:6379");
 
-        var dotNetResultsKey = new KeyPrefix("results:dotnet");
-        var sharedResultsKey = new KeyPrefix("results:shared");
+        var dotNetResultsKey = new KeyPrefix("results:dotnet:");
+        var sharedResultsKey = new KeyPrefix("results:shared:");
 
         var dotNetQueue = new WorkQueue(new KeyPrefix("dotnet_jobs"));
         var sharedQueue = new WorkQueue(new KeyPrefix("shared_jobs"));
