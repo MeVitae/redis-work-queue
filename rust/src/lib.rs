@@ -1,3 +1,121 @@
+//! A work queue, on top of a redis database, with implementations in Python, Rust, Go and C#.
+//!
+//! This is the Rust implementations. For an overview of how the work queue works, it's
+//! limitations, and the general concepts and implementations in other languages, please read the
+//! [redis-work-queue readme](https://github.com/MeVitae/redis-work-queue/blob/main/README.md).
+//!
+//! ## Setup
+//!
+//! ```rust
+//! # async fn example() -> redis::RedisResult<()> {
+//! use redis_work_queue::{Item, KeyPrefix, WorkQueue};
+//!
+//! let host = "your-redis-server";
+//! let db = &mut redis::Client::open(format!("redis://{host}/"))?
+//!     .get_async_connection()
+//!     .await?;
+//!
+//! let work_queue = WorkQueue::new(KeyPrefix::from("example_work_queue"));
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Adding work
+//!
+//! ### Creating `Item`s
+//!
+//! ```rust
+//! use redis_work_queue::Item;
+//!
+//! // Create an item from `Box<[u8]>`
+//! let box_item = Item::new(Box::new(*b"[1,2,3]"));
+//!
+//! // Create an item from a `String`
+//! let string_item = Item::from_string_data("[1,2,3]".to_string());
+//!
+//! // Create an item from a serializable type
+//! let json_item = Item::from_json_data(&[1, 2, 3]).unwrap();
+//!
+//! assert_eq!(box_item.data, string_item.data);
+//! assert_eq!(box_item.data, json_item.data);
+//! ```
+//!
+//! ### Add an item to a work queue
+//! ```rust
+//! # use redis::{AsyncCommands, RedisResult};
+//! # use redis_work_queue::{Item, KeyPrefix, WorkQueue};
+//! # async fn add_item<C: AsyncCommands>(db: &mut C, work_queue: WorkQueue, item: Item) -> redis::RedisResult<()> {
+//! work_queue.add_item(db, &item).await.expect("failed to add item to work queue");
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Completing work
+//!
+//! Please read [the documentation on leasing and completing
+//! items](https://github.com/MeVitae/redis-work-queue/blob/main/README.md#leasing-an-item).
+//!
+//! ```rust
+//! use std::time::Duration;
+//!
+//! use redis::{AsyncCommands, RedisResult};
+//! use redis_work_queue::{Item, WorkQueue};
+//!
+//! # fn do_some_work(_: &Item) {}
+//! pub async fn work_loop<C: AsyncCommands>(db: &mut C, work_queue: WorkQueue) -> RedisResult<()> {
+//!     loop {
+//!         // Wait for a job with no timeout and a lease time of 5 seconds.
+//!         let job: Item = work_queue.lease(db, None, Duration::from_secs(5)).await?.unwrap();
+//!         do_some_work(&job);
+//!         work_queue.complete(db, &job);
+//!     }
+//! }
+//! ```
+//!
+//! ### Handling errors
+//!
+//! Please read [the documentation on handling
+//! errors](https://github.com/MeVitae/redis-work-queue/blob/main/README.md#handling-errors).
+//!
+//! ```rust
+//! use std::time::Duration;
+//!
+//! use redis::{AsyncCommands, RedisResult};
+//! use redis_work_queue::{Item, WorkQueue};
+//!
+//! # struct ExampleError {
+//! #     should_retry: bool,
+//! # }
+//! # impl ExampleError {
+//! #     fn should_retry(&self) -> bool {
+//! #         self.should_retry
+//! #     }
+//! # }
+//! # fn do_some_work(_: &Item) -> Result<(), ExampleError> { Ok(()) }
+//! # fn log_error(_: ExampleError) {}
+//! pub async fn work_loop<C: AsyncCommands>(db: &mut C, work_queue: WorkQueue) -> RedisResult<()> {
+//!     loop {
+//!         // Wait for a job with no timeout and a lease time of 5 seconds.
+//!         let job: Item = work_queue.lease(db, None, Duration::from_secs(5)).await?.unwrap();
+//!         match do_some_work(&job) {
+//!             // Mark successful jobs as complete
+//!             Ok(()) => {
+//!                 work_queue.complete(db, &job).await?;
+//!             }
+//!             // Drop a job that should be retried - it will be returned to the work queue after
+//!             // the (5 second) lease expires.
+//!             Err(err) if err.should_retry() => (),
+//!             // Errors that shouldn't cause a retry should mark the job as complete so it isn't
+//!             // tried again.
+//!             Err(err) => {
+//!                 log_error(err);
+//!                 work_queue.complete(db, &job).await?;
+//!             }
+//!         }
+//!     }
+//! }
+//! ```
+
 use std::future::Future;
 use std::time::Duration;
 
@@ -9,11 +127,14 @@ use uuid::Uuid;
 ///
 /// ### Example
 ///
-/// ```rust,ignore
-/// let cv_key = KeyPrefix::new("cv:");
+/// ```rust
+/// use redis_work_queue::KeyPrefix;
+///
+/// let cv_key = KeyPrefix::from("cv:");
 /// // ...
 /// let cv_id = "abcdef-123456";
-/// let cv_info = db.get(cv_key.of(cv_id));
+/// assert_eq!(cv_key.of(cv_id), "cv:abcdef-123456");
+/// // let cv_info = db.get(cv_key.of(cv_id));
 /// ```
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct KeyPrefix {
@@ -49,6 +170,18 @@ impl KeyPrefix {
     }
 }
 
+impl From<String> for KeyPrefix {
+    fn from(prefix: String) -> KeyPrefix {
+        KeyPrefix::new(prefix)
+    }
+}
+
+impl From<&str> for KeyPrefix {
+    fn from(prefix: &str) -> KeyPrefix {
+        KeyPrefix::new(prefix.to_string())
+    }
+}
+
 impl Into<String> for KeyPrefix {
     fn into(self) -> String {
         self.prefix
@@ -69,12 +202,19 @@ pub struct Item {
 }
 
 impl Item {
-    /// Create a new item with a random id (a uuid).
+    /// Create a new item, with the provided `data` and a random id (a uuid).
     pub fn new(data: Box<[u8]>) -> Item {
         Item {
             data,
             id: Uuid::new_v4().to_string(),
         }
+    }
+
+    /// Create a new item, with the provided `data` and a random id (a uuid).
+    ///
+    /// The item's data is the output of `data.into_bytes().into_boxed_slice()`.
+    pub fn from_string_data(data: String) -> Item {
+        Item::new(data.into_bytes().into_boxed_slice())
     }
 
     /// Create a new item with a random id (a uuid). The data is the result of
@@ -169,7 +309,9 @@ impl WorkQueue {
     /// If the job is not completed (by calling [`WorkQueue::complete`]) before the end of
     /// `lease_duration`, another worker may pick up the same job. It is not a problem if a job is
     /// marked as `done` more than once.
-    // TODO: Add non-blocking option.
+    ///
+    /// If you've not already done it, it's worth reading [the documentation on leasing
+    /// items](https://github.com/MeVitae/redis-work-queue/blob/main/README.md#leasing-an-item).
     pub async fn lease<C: AsyncCommands>(
         &self,
         db: &mut C,
@@ -216,7 +358,12 @@ impl WorkQueue {
         Ok(Some(item))
     }
 
-    /// Mark a job as completed and remove it from the work queue.
+    /// Marks a job as completed and remove it from the work queue. After `complete` has been called
+    /// (and returns `true`), no workers will receive this job again.
+    ///
+    /// `complete` returns a boolean indicating if *the job has been removed* **and** *this worker
+    /// was the first worker to call `complete`*. So, while lease might give the same job to
+    /// multiple workers, complete will return `true` for only one worker.
     pub async fn complete<C: AsyncCommands>(&self, db: &mut C, item: &Item) -> RedisResult<bool> {
         let removed: usize = db.lrem(&self.processing_key, 0, &item.id).await?;
         if removed == 0 {

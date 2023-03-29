@@ -4,19 +4,20 @@ A work queue, on top of a redis database, with implementations in Python, Rust, 
 
 This provides no method of tracking the outcome of work items. This is fairly simple to implement
 yourself (just store the result in the redis database with a key derived from the work item id). If
-you want a more fully-featured system for managing jobs, see our [Collection Manager](#).
+you want a more fully-featured system for managing jobs, see our [Collection
+Manager](https://github.com/MeVitae/redis-collection-manager).
 
 Implementations in other languages are welcome, open a PR!
 
-## Examples
+## Documentations
 
-### Setup
+In addition to the primary overview below, each implementation has its own examples and API
+reference.
 
-### Adding jobs
+- Rust: on [docs.rs](https://docs.rs/redis-work-queue/)
+- Go: on [pkg.go.dev](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go)
 
-### Claiming and completing jobs
-
-## More details
+## Overview
 
 All the implementations share the same operations, on the same core types, these are:
 
@@ -30,7 +31,9 @@ completed.
 
 ### Adding an item
 
-*Python: [`WorkQueue.add_item`](#), Rust: [`WorkQueue::add_item`](#), Go: [`WorkQueue.AddItem`](#)*
+*Python: `WorkQueue.add_item`,
+Rust: [`WorkQueue::add_item`](https://docs.rs/redis-work-queue/latest/redis_work_queue/struct.WorkQueue.html#method.add_item),
+Go: [`WorkQueue.AddItem`](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go#WorkQueue.AddItem)*
 
 Adding an item is exactly what it sounds like! It adds an item to the work queue. It will then
 either be in the queue or being processed (before coming back to the queue if the processing fails)
@@ -38,7 +41,9 @@ until the job is completed.
 
 ### Leasing an item
 
-*Python: [`WorkQueue.lease`](#), Rust: [`WorkQueue::lease`](#), Go: [`WorkQueue.Lease`](#)*
+*Python: `WorkQueue.lease`,
+Rust: [`WorkQueue::lease`](https://docs.rs/redis-work-queue/latest/redis_work_queue/struct.WorkQueue.html#method.lease),
+Go: [`WorkQueue.Lease`](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go#WorkQueue.Lease)*
 
 Workers wanting to receive a job and complete it must start by obtaining a lease.
 
@@ -65,7 +70,7 @@ once](#).
 The work queue provides no method of tracking the outcome of work items. This is fairly simple to
 implement yourself (just store the result in the redis database with a key derived from the work
 item id). If you want a more fully-featured system for managing jobs, see our [Collection
-Manager](#).
+Manager](https://github.com/MeVitae/redis-collection-manager).
 
 #### Handling errors
 
@@ -119,12 +124,12 @@ This works because `complete` returns `true` *iff* it is the worker that complet
 
 *Python: [`WorkQueue.complete`](#), Rust: [`WorkQueue::complete`](#), Go: [`WorkQueue.Complete`](#)*
 
-Complete marks a job as completed and removes it from the work queue. After `complete` has been
-called, no workers will receive this job again.
+Complete marks a job as completed and remove it from the work queue. After `complete` has been called
+(and returns `true`), no workers will receive this job again.
 
-`complete` returns a boolean indicating if this worker was the first worker to call `complete`. So,
-while `lease` might give the same job to multiple workers, `complete` will return `true` for only
-one worker.
+`complete` returns a boolean indicating if *the job has been removed* **and** *this worker was the
+first worker to call `complete`*. So, while lease might give the same job to multiple workers,
+complete will return `true` for only one worker.
 
 #### Storing the result
 
@@ -134,8 +139,7 @@ See [Storing the result of a work item](#)
 
 #### Light cleaning
 
-*Python: [`WorkQueue.light_clean`](#), Rust: [`WorkQueue::light_clean`](#), no Go or C#
-implementation*
+*Python: `WorkQueue.light_clean`, Rust implementation planned, no Go or C# implementation planned*
 
 When a worker dies while processing a job, or abandons a job, the job is left in the processing
 state until it expires. The role of *light cleaning* is to move these jobs back to the main work
@@ -146,8 +150,7 @@ time you use.
 
 #### Deep cleaning
 
-*Python: [`WorkQueue.deep_clean`](#), Rust: [`WorkQueue::deep_clean`](#), no Go or C#
-implementation*
+*Python and Rust implementations planned, no Go or C# implementation planned*
 
 In addition to this, a worker dying in the middle of a call to `complete` can leave database items
 that are no longer associated with an active job. The job of a *deep clean* is to iterate over these
@@ -167,16 +170,18 @@ running the cleaning. We provide a simple cleaner, both in Python and Rust.
 
 #### Getting the queue length
 
-*Python: [`WorkQueue.queue_len`](#), Rust: [`WorkQueue::queue_len`](#), Go: [`WorkQueue.QueueLen`](#)*
+*Python: `WorkQueue.queue_len`,
+Rust: [`WorkQueue::queue_len`](https://docs.rs/redis-work-queue/latest/redis_work_queue/struct.WorkQueue.html#method.queue_len),
+Go: [`WorkQueue.QueueLen`](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go#WorkQueue.QueueLen)*
 
 #### Getting the number of leased items
 
-*Python: [`WorkQueue.processing`](#), Rust: [`WorkQueue::processing`](#), Go: [`WorkQueue.Processing`](#)*
+*Python: `WorkQueue.processing`,
+Rust: [`WorkQueue::processing`](https://docs.rs/redis-work-queue/latest/redis_work_queue/struct.WorkQueue.html#method.processing),
+Go: [`WorkQueue.QueueLen`](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go#WorkQueue.Processing)*
 
-This includes items being worked on and abandoned items (see [Handling errors](#)) yet to be
+This includes items being worked on and abandoned items (see [Handling errors](#handling-errors)) yet to be
 returned to the main queue.
-
-## Under the hood
 
 ## Testing
 

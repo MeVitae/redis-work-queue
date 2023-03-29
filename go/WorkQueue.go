@@ -1,3 +1,67 @@
+// Package workqueue is the Go implementation of a work queue, on top of a redis database, with implementations in Python, Rust, Go and C#.
+//
+// For an overview of how the work queue works, it’s limitations, and the general concepts and
+// implementations in other languages, please read the redis-work-queue readme at
+// https://github.com/MeVitae/redis-work-queue/blob/main/README.md.
+//
+// # Setup
+//
+//	import (
+//	    "github.com/redis/go-redis/v9"
+//	    workqueue "github.com/mevitae/redis-work-queue/go"
+//	)
+//
+//	db := redis.NewClient(&redis.Options{
+//	    Addr: "your-redis-server:1234",
+//	})
+//	workQueue := workqueue.NewWorkQueue(workqueue.KeyPrefix("example_work_queue"))
+//
+// # Adding Items
+//
+//	// From bytes:
+//	exampleItem := NewItem([]byte("[1,2,3]"))
+//	// Or from JSON:
+//	jsonItem, err := NewItemFromJSONData([1, 2, 3])
+//	// ...
+//	err = workQueue.AddItem(ctx, db, jsonItem)
+//
+// # Completing work
+//
+// Please read the documentation on leasing and completing items at
+// https://github.com/MeVitae/redis-work-queue/blob/main/README.md#leasing-an-item
+//
+//	for (;;) {
+//	   job, err := workQueue.Lease(ctx, db, true, 0, 5*time.Second)
+//	   if err != nil { panic(err) }
+//	   doSomeWork(job)
+//	   _, err = workQueue.Complete(ctx, db, job)
+//	   if err != nil { panic(err) }
+//	}
+//
+// # Handling errors
+//
+// Please read the documentation on handling errors at
+// https://github.com/MeVitae/redis-work-queue/blob/main/README.md#handling-errors
+//
+//	for (;;) {
+//	   job, err := workQueue.Lease(ctx, db, true, 0, 5*time.Second)
+//	   if err != nil { panic(err) }
+//	   err = doSomeWork(job)
+//	   if err == nil {
+//	       // Mark successful jobs as complete
+//	       _, err = workQueue.Complete(ctx, db, job)
+//	       if err != nil { panic(err) }
+//	   } else if !shouldRetryAfter(err) {
+//	       // Errors that shouldn't cause a retry should mark the job as complete so it isn't tried
+//	       // again.
+//	       logError(err)
+//	       _, err = workQueue.Complete(ctx, db, job)
+//	       if err != nil { panic(err) }
+//	   } else {
+//	       // Drop a job that should be retried - it will be returned to the work queue after the
+//	       // (5 second) lease expires.
+//	   }
+//	}
 package workqueue
 
 import (
@@ -36,7 +100,7 @@ func NewWorkQueue(name KeyPrefix) WorkQueue {
 
 // AddItemToPipeline adds an item to the work queue. This adds the redis commands onto the pipeline passed.
 //
-// Use `WorkQueue.AddItem` if you don't want to pass a pipeline directly.
+// Use [WorkQueue.AddItem] if you don't want to pass a pipeline directly.
 func (workQueue *WorkQueue) AddItemToPipeline(ctx context.Context, pipeline redis.Pipeliner, item Item) {
 	// Add the item data
 	// NOTE: it's important that the data is added first, otherwise someone could pop the item
@@ -57,7 +121,7 @@ func (workQueue *WorkQueue) AddItem(ctx context.Context, db *redis.Client, item 
 }
 
 // Return the length of the work queue (not including items being processed, see
-// `WorkQueue.Processing`).
+// [WorkQueue.Processing]).
 func (workQueue *WorkQueue) QueueLen(ctx context.Context, db *redis.Client) (int64, error) {
 	return db.LLen(ctx, workQueue.mainQueueKey).Result()
 }
@@ -68,15 +132,18 @@ func (workQueue *WorkQueue) Processing(ctx context.Context, db *redis.Client) (i
 }
 
 // Request a work lease the work queue. This should be called by a worker to get work to complete.
-// When completed, the `complete` method should be called.
+// When completed, the [WorkQueue.Complete] method should be called.
 //
-// If `block` is true, the function will return either when a job is leased or after `timeout` if
-// `timeout` isn't 0.
+// If block is true, the function will return either when a job is leased or after timeout if
+// timeout isn't 0.
 //
-// If the job is not completed before the end of `lease_duration`, another worker may pick up the
-// same job. It is not a problem if a job is marked as `done` more than once.
+// If the job is not completed before the end of lease_duration, another worker may pick up the same
+// job. It is not a problem if a job is marked as done more than once.
 //
-// If no job is available before the timeout, `nil, nil` is returned.
+// If no job is available before the timeout, (nil, nil) is returned.
+//
+// If you've not already done it, it's worth reading the documentation on leasing items at
+// https://github.com/MeVitae/redis-work-queue/blob/main/README.md#leasing-an-item
 func (workQueue *WorkQueue) Lease(
 	ctx context.Context,
 	db *redis.Client,
@@ -116,19 +183,20 @@ func (workQueue *WorkQueue) Lease(
 	}, err
 }
 
-// Complete marks a job as completed and removes it from the work queue.
+// Complete marks a job as completed and remove it from the work queue. After Complete has been
+// called (and returns true), no workers will receive this job again.
 //
-// This returns a boolean indicating if this worker was the first worker to call `Complete`.  So,
-// while `lease` might give the same job to multiple workers, `Complete` will return `true` for only
-// one worker.
+// Complete returns a boolean indicating if *the job has been removed* **and** *this worker was the
+// first worker to call Complete*. So, while lease might give the same job to multiple workers,
+// complete will return true for only one worker.
 func (workQueue *WorkQueue) Complete(ctx context.Context, db *redis.Client, item *Item) (bool, error) {
 	removed, err := db.LRem(ctx, workQueue.processingKey, 0, item.ID).Result()
 	if removed == 0 || err != nil {
 		return false, err
 	}
-    // If we did actually remove it, delete the item data and lease.
-    // If we didn't really remove it, it's probably been returned to the work queue so the data is
-    // still needed and the lease might not be ours (if it is still ours, it'll expire anyway).
+	// If we did actually remove it, delete the item data and lease.
+	// If we didn't really remove it, it's probably been returned to the work queue so the data is
+	// still needed and the lease might not be ours (if it is still ours, it'll expire anyway).
 	_, err = db.Pipelined(ctx, func(pipeline redis.Pipeliner) error {
 		pipeline.Del(ctx, workQueue.itemDataKey.Of(item.ID))
 		pipeline.Del(ctx, workQueue.leaseKey.Of(item.ID))

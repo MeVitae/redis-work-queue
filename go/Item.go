@@ -20,19 +20,19 @@ func NewItem(data []byte) Item {
 	}
 }
 
-// NewItemFromJSONData creates a new item with a random ID (a UUID). The data is the result of `json.Marshal(data)`.
+// NewItemFromJSONData creates a new item with a random ID (a UUID). The data is the result of json.Marshal(data).
 func NewItemFromJSONData(data any) (Item, error) {
 	dataBytes, err := json.Marshal(data)
 	return NewItem(dataBytes), err
 }
 
-// ParseJsonData parses the items data, as JSON, to `v`.
+// ParseJsonData parses the item's data, as JSON, to v.
 func (item *Item) ParseJsonData(v any) error {
 	return json.Unmarshal(item.Data, v)
 }
 
-// ItemDataJson returns the data from an item, parsed as JSON to type `T`.
+// ItemDataJson returns the data from an item, parsed as JSON to type T.
 func ItemDataJson[T any](item *Item) (data T, err error) {
-    err = item.ParseJsonData(&data)
-    return
+	err = item.ParseJsonData(&data)
+	return
 }

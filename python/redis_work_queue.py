@@ -14,6 +14,8 @@ class KeyPrefix:
     cv_key = KeyPrefix("cv:")
     # ...
     cv_id = "abcdef-123456"
+    assert cv_key.of(cv_id) == "cv:abcdef-123456"
+    # You could use this to fetch something from a database, for example:
     cv_info = db.get(cv_key.of(cv_id))
     ```
     """
@@ -176,7 +178,11 @@ class WorkQueue(object):
         if `timeout` isn't 0.
 
         If the job is not completed before the end of `lease_duration`, another worker may pick up
-        the same job. It is not a problem if a job is marked as `done` more than once."""
+        the same job. It is not a problem if a job is marked as `done` more than once.
+
+        If you've not already done it, it's worth reading [the documentation on leasing
+        items](https://github.com/MeVitae/redis-work-queue/blob/main/README.md#leasing-an-item).
+        """
         # First, to get an item, we try to move an item from the main queue to the processing list.
         if block:
             maybe_item_id: bytes | str | None = db.brpoplpush(
@@ -212,11 +218,12 @@ class WorkQueue(object):
         return Item(data, id=item_id)
 
     def complete(self, db: Redis, item: Item) -> bool:
-        """Mark a job as completed and remove it from the work queue.
+        """Marks a job as completed and remove it from the work queue. After `complete` has been
+        called (and returns `true`), no workers will receive this job again.
 
-        This returns a boolean indicating if this worker was the first worker to call `complete`.
-        So, while `lease` might give the same job to multiple workers, `complete` will return `true`
-        for only one worker."""
+        `complete` returns a boolean indicating if *the job has been removed* **and** *this worker
+        was the first worker to call `complete`*. So, while lease might give the same job to
+        multiple workers, complete will return `true` for only one worker."""
         removed = int(db.lrem(self._processing_key, 0, item.id()))
         # Only complete the work if it was still in the processing queue
         if removed == 0:
