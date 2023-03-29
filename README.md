@@ -16,11 +16,11 @@ reference.
 
 - Rust: [![Crates.io](https://img.shields.io/crates/v/redis-work-queue)](https://crates.io/crates/redis-work-queue)
   [![docs.rs](https://img.shields.io/docsrs/redis-work-queue)](https://docs.rs/redis-work-queue)
-  ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
+  [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 - Go: [![Go Report Card](https://goreportcard.com/badge/github.com/mevitae/redis-work-queue/go)](https://goreportcard.com/report/github.com/mevitae/redis-work-queue/go)
   [![GoDoc](https://pkg.go.dev/badge/github.com/mevitae-redis-work-queue/go)](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go)
-  ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
+  [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 ## Overview
 
