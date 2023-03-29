@@ -9,13 +9,18 @@ Manager](https://github.com/MeVitae/redis-collection-manager).
 
 Implementations in other languages are welcome, open a PR!
 
-## Documentations
+## Documentation
 
 In addition to the primary overview below, each implementation has its own examples and API
 reference.
 
-- Rust: on [docs.rs](https://docs.rs/redis-work-queue/)
-- Go: on [pkg.go.dev](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go)
+- Rust: [![Crates.io](https://img.shields.io/crates/v/redis-work-queue)](https://crates.io/crates/redis-work-queue)
+  [![docs.rs](https://img.shields.io/docsrs/redis-work-queue)](https://docs.rs/redis-work-queue)
+  ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
+
+- Go: [![Go Report Card](https://goreportcard.com/badge/github.com/mevitae/redis-work-queue/go)](https://goreportcard.com/report/github.com/mevitae/redis-work-queue/go)
+  [![GoDoc](https://pkg.go.dev/badge/github.com/mevitae-redis-work-queue/go)](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go)
+  ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
 
 ## Overview
 
