@@ -38,6 +38,9 @@
 //!
 //! assert_eq!(box_item.data, string_item.data);
 //! assert_eq!(box_item.data, json_item.data);
+//!
+//! // Parse an Item's data as json:
+//! assert_eq!(box_item.data_json::<Vec<u32>>().unwrap(), vec![1, 2, 3]);
 //! ```
 //!
 //! ### Add an item to a work queue
