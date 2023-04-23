@@ -1,90 +1,9 @@
 import uuid
-import json
-
 from redis import Redis
 from redis.client import Pipeline
 
-
-class KeyPrefix:
-    """A string which should be prefixed to an identifier to generate a database key.
-
-    ### Example
-
-    ```python
-    cv_key = KeyPrefix("cv:")
-    # ...
-    cv_id = "abcdef-123456"
-    assert cv_key.of(cv_id) == "cv:abcdef-123456"
-    # You could use this to fetch something from a database, for example:
-    cv_info = db.get(cv_key.of(cv_id))
-    ```
-    """
-
-    def __init__(self, prefix: str):
-        self.prefix = prefix
-
-    def of(self, name: str) -> str:
-        """Returns the result of prefixing `self` onto `name`."""
-        return self.prefix + name
-
-    @classmethod
-    def concat(cls, prefix, name: str):
-        """Returns the result of prefixing `self` onto `name` as a new `KeyPrefix."""
-        return cls(prefix.of(name))
-
-
-class Item(dict):
-    """An item for a work queue. Each item has an ID and associated data."""
-
-    def __init__(self, data: bytes | str, id=None):
-        """
-        Args:
-            data (bytes or str): Data to associate with this item, strings will be converted to
-                                 bytes.
-            id (str | None): ID of the Item, if None, a new (random UUID) ID is generated.
-        """
-        if isinstance(data, str):
-            data = bytes(data, 'utf-8')
-        elif not isinstance(data, bytes):
-            data = bytes(data)
-
-        if id is None:
-            id = uuid.uuid4().hex
-        elif type(id) != str:
-            id = str(id)
-
-        dict.__init__(self, data=data, id=id)
-
-    @classmethod
-    def from_dict(cls, loaded: dict):
-        """Create an `Item` from a dictionary containing 'data' and, optionally, 'id'."""
-        id = None
-        if 'id' in loaded:
-            id = loaded['id']
-        return cls(loaded['data'], id=id)
-
-    @classmethod
-    def parse(cls, s: str):
-        """Parse an `Item` from JSON. The JSON structure should be an object with a 'data' key and,
-        optionally, an 'id' key."""
-        return cls.from_dict(json.loads(s))
-
-    @classmethod
-    def from_json_data(cls, data, id=None):
-        """Generate an item where the associated data is the JSON string of `data`."""
-        return cls(json.dumps(data), id=id)
-
-    def data(self) -> bytes:
-        """Get the data associated with this item."""
-        return self['data']
-
-    def data_json(self):
-        """Get the data associated with this item, parsed as JSON."""
-        return json.loads(self.data())
-
-    def id(self) -> str:
-        """Get the ID of the item."""
-        return self['id']
+from redis_work_queue import Item
+from redis_work_queue import KeyPrefix
 
 
 class WorkQueue(object):
@@ -235,3 +154,6 @@ class WorkQueue(object):
             .delete(self._lease_key.of(item_id)) \
             .execute()
         return True
+
+
+__version__ = "0.1.2"

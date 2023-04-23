@@ -14,6 +14,9 @@ Implementations in other languages are welcome, open a PR!
 In addition to the primary overview below, each implementation has its own examples and API
 reference.
 
+- Python: [![PyPI](https://img.shields.io/pypi/v/redis-work-queue)](https://pypi.org/project/redis-work-queue/)
+  [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./python/LICENSE)
+
 - Rust: [![Crates.io](https://img.shields.io/crates/v/redis-work-queue)](https://crates.io/crates/redis-work-queue)
   [![docs.rs](https://img.shields.io/docsrs/redis-work-queue)](https://docs.rs/redis-work-queue)
   [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
