@@ -182,9 +182,9 @@ impl From<&str> for KeyPrefix {
     }
 }
 
-impl Into<String> for KeyPrefix {
-    fn into(self) -> String {
-        self.prefix
+impl From<KeyPrefix> for String {
+    fn from(key_prefix: KeyPrefix) -> String {
+        key_prefix.prefix
     }
 }
 
