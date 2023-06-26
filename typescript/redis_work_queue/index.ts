@@ -19,8 +19,8 @@ export class WorkQueue {
     this.processingKey = name.of(':processing');
     this.cleaningKey = name.of(':cleaning');
     this.session = uuidv4();
-    this.leaseKey = KeyPrefix.concat(name, ':leased_by_session:');
-    this.itemDataKey = KeyPrefix.concat(name, ':item:');
+    this.leaseKey = KeyPrefix.concat(':leased_by_session:');
+    this.itemDataKey = KeyPrefix.concat(':item:');
   }
 
   addItemToPipeline(pipeline: Pipeline, item: typeof Item): void {
@@ -45,20 +45,20 @@ export class WorkQueue {
     pipeline.exec();
   }
 
-  async queueLen(db: Redis): Promise<number> {
+  queueLen(db: Redis): Promise<number> {
     // Return the length of the work queue (not including items being processed, see `WorkQueue.processing()`).
-    return await db.llen(this.mainQueueKey);
+    return db.llen(this.mainQueueKey);
   }
 
-  async processing(db: Redis) {
+  processing(db: Redis) {
     // Return the number of items being processed.
-    return await db.llen(this.processingKey);
+    return db.llen(this.processingKey);
   }
 
-  async _lease_exists(db: Redis, itemId: string): Promise<boolean> {
-    return await db.exists(KeyPrefix(this.leaseKey).of(itemId)) !== 0;
-    // True if a lease on 'itemId' exists.
+  _lease_exists(db: Redis, itemId: string): Promise<boolean> {
+    return db.exists(KeyPrefix(this.leaseKey).of(itemId)).then(exists => exists !== 0);
   }
+  
 
   async lease(db: Redis, leaseSecs: number, block = true, timeout = 0): Promise<typeof Item> {
     /**
@@ -83,7 +83,7 @@ export class WorkQueue {
       maybeItemId = await db.rpoplpush(this.mainQueueKey, this.processingKey);
     }
 
-    if (maybeItemId == undefined || maybeItemId == null) {
+    if (maybeItemId == null) {
       return undefined;
     }
 

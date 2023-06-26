@@ -26,9 +26,9 @@ export class KeyPrefix {
       return this.prefix + name;
     }
   
-    static concat(prefix: KeyPrefix, name: string): KeyPrefix {
+    concat(name: string): KeyPrefix {
       // Returns the result of prefixing `self` onto `name` as a new `KeyPrefix`.
-      return new KeyPrefix(prefix.of(name));
+      return new KeyPrefix(this.of(name));
     }
   }
   

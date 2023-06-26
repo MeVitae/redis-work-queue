@@ -6,11 +6,11 @@ type ItemData = {
 
 export class Item {
   // An item for a work queue. Each item has an ID and associated data.
-  private dict: ItemData = {};
+
   private data: Buffer | string;
   private id: string;
 
-  constructor(data: string | Buffer, id: string | null = null) {
+  constructor(data: string | Buffer, id?: string) {
     /**
      * Args:
      * data (bytes or str): Data to associate with this item, strings will be converted to bytes.
@@ -32,12 +32,12 @@ export class Item {
       this.id = id;
     }
 
-    this.dict[this.id] = this.data;
+  
   }
 
   static fromDict(loaded: ItemData): Item {
     // Create an `Item` from a dictionary containing 'data' and, optionally, 'id'.
-    let id: string | null = null;
+    let id: string | undefined = undefined;
     if ('id' in loaded) {
       id = loaded['id'];
     }
@@ -49,7 +49,7 @@ export class Item {
     return JSON.parse(string);
   }
 
-  static fromJsonData(data: string, id: string | null = null) {
+  static fromJsonData(data: string, id?: string) {
     //Generate an item where the associated data is the JSON string of `data`.
     return new Item(JSON.stringify(data), id);
   }
