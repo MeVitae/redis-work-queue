@@ -234,7 +234,7 @@ export class WorkQueue {
      * multiple workers, complete will return `true` for only one worker.
      */
 
-    const removed = Number(await db.lrem(this.processingKey, 0, item.id()));
+    const removed = await db.lrem(this.processingKey, 0, item.id());
   
     if (removed === 0) {
       return false;
