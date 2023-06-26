@@ -1,65 +1,95 @@
-
-const Redis = require('ioredis');
+import Redis, { Pipeline } from 'ioredis';
 const KeyPrefix = require("./KeyPrefix")
-
-const redisCon = new Redis('redis://default:eqThIleBUDGMARxY1mtZtCKCYKDXlqFC@redis-14357.c59.eu-west-1-2.ec2.cloud.redislabs.com:14357');
 const { Item } = require("./Item");
 const { v4 : uuidv4 } = require('uuid');
 
 class WorkQueue {
+    /**
+ * A work queue backed by a redis database
+ */
   private session: string;
-  private main_queue_key: string;
-  private processing_key: string;
-  private cleaning_key: string;
-  private lease_key: string;
-  private item_data_key:string;
+  private mainQueueKey: string;
+  private processingKey: string;
+  private cleaningKey: string;
+  private leaseKey: string;
+  private itemDataKey:string;
+
   constructor(name: typeof KeyPrefix) {
-    this.main_queue_key = name.of(':queue');
-    this.processing_key = name.of(':processing');
-    this.cleaning_key = name.of(':cleaning');
+    this.mainQueueKey = name.of(':queue');
+    this.processingKey = name.of(':processing');
+    this.cleaningKey = name.of(':cleaning');
     this.session = uuidv4();
-    this.lease_key = KeyPrefix.concat(name, ':leased_by_session:')
-    this.item_data_key = KeyPrefix.concat(name, ':item:')
+    this.leaseKey = KeyPrefix.concat(name, ':leased_by_session:')
+    this.itemDataKey = KeyPrefix.concat(name, ':item:')
   }
-  addItemToPipeline(pipeline: Redis.Pipeline, item:typeof Item) {
+  addItemToPipeline(pipeline: Pipeline, item: typeof Item): void {
+      /**
+        Add an item to the work queue. This adds the redis commands onto the pipeline passed.
+        Use `WorkQueue.addItem` if you don't want to pass a pipeline directly.
+        Add the item data
+        NOTE: it's important that the data is added first, otherwise someone before the data is
+        ready
+        */
     const itemId = item.Id();
-    pipeline.set(this.item_data_key + itemId, item.Data());
-    pipeline.lpush(this.main_queue_key, itemId);
+    pipeline.set(this.itemDataKey + itemId, item.Data());
+    //Then add the id to the work queue
+    pipeline.lpush(this.mainQueueKey, itemId);
   }
-  addItem(db:typeof Redis,item:typeof Item){
-    const pipeline = db.pipeline();
-    this.addItemToPipeline(pipeline,item)
+
+  addItem(db: Redis, item: typeof Item): void {
+    //Add an item to the work queue.
+    //This creates a pipeline and executes it on the database.
+        
+    const pipeline = db.pipeline() as unknown as Pipeline;
+    this.addItemToPipeline(pipeline, item);
     pipeline.exec();
   }
-  async queueLen(db:typeof Redis):Promise<number> {
-    return await db.llen(this.main_queue_key);
+  async queueLen(db: Redis):Promise<number> {
+    //Return the length of the work queue (not including items being processed, see `WorkQueue.processing()`).
+    return await db.llen(this.mainQueueKey);
   }
-  async processing(db:typeof Redis){
-    return await db.llen(this.processing_key);
+  async processing(db: Redis){
+    //Return the number of items being processed.
+    return await db.llen(this.processingKey);
   }
-  async _lease_exists(db:typeof Redis,itemId:string):Promise<boolean>{
-    const exists = await db.exists(KeyPrefix(this.lease_key).of(itemId));
-    return exists !== 0;
+  async _lease_exists(db: Redis,itemId:string):Promise<boolean>{
+    return await db.exists(KeyPrefix(this.leaseKey).of(itemId))!== 0;
+    //True if a lease on 'itemId' exists.
   }
-  async lease(db:typeof Redis,leaseSecs:number,block=true,timeout=0):Promise<typeof Item>{
-    let maybeItemId : Buffer |string|undefined;
+  async lease(db: Redis,leaseSecs:number,block=true,timeout=0):Promise<typeof Item>{
+    /**
+        Request a work lease the work queue. This should be called by a worker to get work to
+        complete. When completed, the `complete` method should be called.
+
+        If `block` is true, the function will return either when a job is leased or after `timeout`
+        if `timeout` isn't 0.
+
+        If the job is not completed before the end of `lease_duration`, another worker may pick up
+        the same job. It is not a problem if a job is marked as `done` more than once.
+
+        If you've not already done it, it's worth reading [the documentation on leasing
+        items](https://github.com/MeVitae/redis-work-queue/blob/main/README.md#leasing-an-item).
+     * */
+    let maybeItemId : Buffer |string|null;
     let itemId:string;
+    //First, to get an item, we try to move an item from the main queue to the processing list.
     if (block){
         maybeItemId  = await db.brpoplpush(
-            this.main_queue_key,
-            this.processing_key,
+            this.mainQueueKey,
+            this.processingKey,
             timeout
           );
     
     }else{
-        maybeItemId  = await db.brpoplpush(
-            this.main_queue_key,
-            this.processing_key,
+        maybeItemId  = await db.rpoplpush(
+            this.mainQueueKey,
+            this.processingKey,
           );
     }
-    if (maybeItemId== undefined){
+    if (maybeItemId== undefined|| maybeItemId==null){
         return undefined
     }
+    //Make sure the item id is a string
     if (Buffer.isBuffer(maybeItemId)) {
         itemId = maybeItemId.toString('utf-8');
       } else if (typeof maybeItemId === 'string') {
@@ -67,62 +97,84 @@ class WorkQueue {
       } else {
         throw new Error("item id from work queue not bytes or string");
       }
-      let data: Buffer | null = await db.get(KeyPrefix(this.item_data_key).of(itemId));
+      //If we got an item, fetch the associated data.
+      let data: Buffer|string | null = await db.get(KeyPrefix(this.itemDataKey).of(itemId));
       if (data === null) {
         data = Buffer.from([]);
       }
-      await db.setex(KeyPrefix(this.lease_key).of(itemId), timeout, this.session);
+        /** 
+        Setup the lease item.
+        NOTE: Racing for a lease is ok.
+        */
+      await db.setex(KeyPrefix(this.leaseKey).of(itemId), timeout, this.session);
 
       return new Item(data, itemId);
   }
-  async lightClean(db:typeof Redis){
-    const processing: Array<Buffer | string> = await db.lrange(this.processing_key, 0, -1);
-    for (let item_id of processing) {
-        if (Buffer.isBuffer(item_id)) {
-            item_id = item_id.toString('utf-8');
+  async lightClean(db: Redis){
+    const processing: Array<Buffer | string> = await db.lrange(this.processingKey, 0, -1);
+    for (let itemId of processing) {
+        if (Buffer.isBuffer(itemId)) {
+            itemId = itemId.toString('utf-8');
           }
-        if (!this._lease_exists(db,item_id)){
-            console.log(`${item_id} has no lease`)
-            await db.lpush(this.cleaning_key,item_id)
-            let removed = Number(db.lrem(this.processing_key,0,item_id))
+        //If the lease key is not present for an item (it expired or was never created because
+        //the client crashed before creating it) then move the item back to the main queue so
+        //others can work on it.
+        if (!this._lease_exists(db,itemId)){
+            console.log(`${itemId} has no lease`)
+            //While working on an item, we store it in the cleaning list. If we ever crash, we
+            //come back and check these items.
+            await db.lpush(this.cleaningKey,itemId)
+            let removed = Number(db.lrem(this.processingKey,0,itemId))
             if (removed>0){
-                await db.lpush(this.processing_key,0,item_id)
-                console.log(`${item_id} was still in the processing queue, it was reset`)
+                await db.lpush(this.processingKey,0,itemId)
+                console.log(`${itemId} was still in the processing queue, it was reset`)
             }else{
-                console.log(`${item_id} was no longer in the processing queue`)
+                console.log(`${itemId} was no longer in the processing queue`)
             }
-            await db.lrem(this.cleaning_key,0,item_id)
+            await db.lrem(this.cleaningKey,0,itemId)
         }
           
       }
-    
-      const forgot: Array<Buffer | string> = await db.lrange(this.cleaning_key, 0, -1);
-      for (let item_id of forgot){
-        if (Buffer.isBuffer(item_id)) {
-            item_id = item_id.toString('utf-8');
+    //Now we check the
+      const forgot: Array<Buffer | string> = await db.lrange(this.cleaningKey, 0, -1);
+      for (let itemId of forgot){
+        if (Buffer.isBuffer(itemId)) {
+            itemId = itemId.toString('utf-8');
         }
-        console.log(`${item_id} was forgotten in clean`)
-        const leaseExists: boolean = await this._lease_exists(db, item_id);
-        const isItemInMainQueue: boolean | null = await db.lpos(this.main_queue_key, item_id);
-        const isItemInProcessing: boolean | null = await db.lpos(this.processing_key, item_id);
+        console.log(`${itemId} was forgotten in clean`)
+        const leaseExists: boolean = await this._lease_exists(db, itemId);
+        const isItemInMainQueue: boolean | null = await db.lpos(this.mainQueueKey, itemId)!== 0;
+        const isItemInProcessing: boolean | null = await db.lpos(this.processingKey, itemId)!== 0;
         if (!leaseExists && isItemInMainQueue === null && isItemInProcessing === null) {
-            await db.lpush(this.main_queue_key, item_id)
-            console.log(`${item_id} 'was not in any queue, it was reset`)
+            //FIXME: this introcudes a race
+            //maybe not anymore
+            //no, it still does, what if the job has been completed?
+            await db.lpush(this.mainQueueKey, itemId)
+            console.log(`${itemId} 'was not in any queue, it was reset`)
         }
-        await db.lrem(this.cleaning_key, 0, item_id)
+        await db.lrem(this.cleaningKey, 0, itemId)
       }
   }
-  async complete(db:typeof Redis,item:typeof Item): Promise<boolean>{
-    const removed: number = await db.lrem(this.processing_key, 0, item.Id());
+  async complete(db: Redis,item:typeof Item): Promise<boolean>{
+    /**
+        Marks a job as completed and remove it from the work queue. After `complete` has been
+        called (and returns `true`), no workers will receive this job again.
 
+        `complete` returns a boolean indicating if *the job has been removed* **and** *this worker
+        was the first worker to call `complete`*. So, while lease might give the same job to
+        multiple workers, complete will return `true` for only one worker.
+     */
+    const removed: number = await db.lrem(this.processingKey, 0, item.Id());
+    //Only complete the work if it was still in the processing queue
     if (removed === 0) {
       return false;
     }
 
-    const item_id: string = item.Id();
+    const itemId: string = item.Id();
+    //TODO: The cleaner should also handle these... :(
     await db.pipeline()
-      .delete(this._item_data_key.of(item_id))
-      .delete(this._lease_key.of(item_id))
+      .del(KeyPrefix(this.itemDataKey).of(itemId))
+      .del(KeyPrefix(this.leaseKey).of(itemId))
       .exec();
 
     return true;

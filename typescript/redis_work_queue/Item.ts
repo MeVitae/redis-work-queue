@@ -4,12 +4,17 @@ type ItemData = {
   };
 
 export class Item{
+    //An item for a work queue. Each item has an ID and associated data.
     private dict: ItemData = {};
     private data: Buffer | string;
 
     private id: string;
     constructor(data: string | Buffer, id: string | null = null) {
-
+        /**
+            Args:
+            data (bytes or str): Data to associate with this item, strings will be converted to bytes.
+            id (str | None): ID of the Item, if None, a new (random UUID) ID is generated.
+         */
         if (typeof data === 'string') {
           this.data = Buffer.from(data, 'utf-8');
         } else if (!(data instanceof Buffer)) {
@@ -29,6 +34,7 @@ export class Item{
       }
 
     static fromDict(loaded: ItemData): Item {
+        //Create an `Item` from a dictionary containing 'data' and, optionally, 'id'.
         let id: string | null = null;
         if ('id' in loaded) {
           id = loaded['id'];
@@ -36,6 +42,7 @@ export class Item{
         return new Item(loaded['data'], id);
       }
     static parse(string:string){
+        //Parse an `Item` from JSON. The JSON structure should be an object with a 'data' key and, optionally, an 'id' key.
         return JSON.parse(string);
     }
     
@@ -43,9 +50,11 @@ export class Item{
         return new Item(JSON.stringify(data), id);
     }
     Data(){
+        //Get the data associated with this item.
         return this.data
     }
-    DataJson(): any {
+    dataJson(): any {
+        //Generate an item where the associated data is the JSON string of `data`.
     let jsonString: string;
     if (typeof this.data === 'string') {
         jsonString = this.data;
@@ -56,6 +65,7 @@ export class Item{
     }
 
     Id():string{
+        //Get the ID of the item.
         return this.id
     }
       
