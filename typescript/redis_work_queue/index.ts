@@ -222,10 +222,30 @@ export class WorkQueue {
     }
   }
 
-  async complete(db: Redis, item: typeof Item) {
-    // Mark an item as complete.
-    await db.del(KeyPrefix(this.leaseKey).of(item.Id()));
-    await db.lrem(this.processingKey, 0, item.Id());
+
+
+  async complete(db:Redis,item: typeof Item): Promise<boolean> {  
+    /**
+     * Marks a job as completed and remove it from the work queue. After `complete` has been
+     * called (and returns `true`), no workers will receive this job again.
+
+     * `complete` returns a boolean indicating if *the job has been removed* **and** *this worker
+     * was the first worker to call `complete`*. So, while lease might give the same job to
+     * multiple workers, complete will return `true` for only one worker.
+     */
+
+    const removed = Number(await db.lrem(this.processingKey, 0, item.id()));
+  
+    if (removed === 0) {
+      return false;
+    }
+    const pipeline = db.pipeline();
+    pipeline.del(KeyPrefix(this.itemDataKey).of(item.id()));
+    pipeline.del(KeyPrefix(this.leaseKey).of(item.id()));
+    await pipeline.exec();
+
+    return true;
   }
+  
 }
 
