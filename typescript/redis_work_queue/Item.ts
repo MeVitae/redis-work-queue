@@ -1,5 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 
+
 type ItemData = {
   [key: string]: any;
 };
@@ -7,8 +8,8 @@ type ItemData = {
 export class Item {
   // An item for a work queue. Each item has an ID and associated data.
 
-  private data: Buffer | string;
-  private id: string;
+  public data: Buffer | string;
+  public id: string;
 
   constructor(data: string | Buffer, id?: string) {
     /**
@@ -16,15 +17,13 @@ export class Item {
      * data (bytes or str): Data to associate with this item, strings will be converted to bytes.
      * id (str | null): ID of the Item, if null, a new (random UUID) ID is generated.
      */
-    if (typeof data === 'string') {
-      this.data = Buffer.from(data, 'utf-8');
-    } else if (!(data instanceof Buffer)) {
+    if (!(data instanceof Buffer)) {
       this.data = Buffer.from(data);
     } else {
       this.data = data;
     }
 
-    if (id === null) {
+    if (id == null) {
       this.id = uuidv4();
     } else if (typeof id !== 'string') {
       this.id = String(id);
@@ -62,13 +61,20 @@ export class Item {
   dataJson(): any {
     // Get the data associated with this item, parsed as JSON.
     let jsonString: string;
-    if (typeof this.data === 'string') {
-      jsonString = this.data;
-    } else {
+    if (Buffer.isBuffer(this.data)) {
       jsonString = this.data.toString('utf-8');
+    } else {
+      jsonString = this.data;
     }
-    return JSON.parse(jsonString);
+    try {
+        console.log(jsonString)
+      return JSON.parse(jsonString);
+    } catch (error) {
+      return {};
+    }
   }
+  
+  
 
   Id(): string {
     // Get the ID of the item.
