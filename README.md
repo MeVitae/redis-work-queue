@@ -1,6 +1,6 @@
 # Redis Work Queue
 
-A work queue, on top of a redis database, with implementations in Python, Rust, Go, C# and NodeJs TypeScript.
+A work queue, on top of a redis database, with implementations in Python, Rust, Go, C# and TypeScript (Node.js).
 
 This provides no method of tracking the outcome of work items. This is fairly simple to implement
 yourself (just store the result in the redis database with a key derived from the work item id). If
@@ -25,9 +25,10 @@ reference.
   [![GoDoc](https://pkg.go.dev/badge/github.com/mevitae-redis-work-queue/go)](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go)
   [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-- NodeJs TypeScript: [![TypeScript Report Card] (Reportcard) )](Reportcardurl)
+- Node.js (TypeScript): [![TypeScript Report Card] (Reportcard) )](Reportcardurl)
   [![npm](badge)](docs)
-  [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+  [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./typescript/LICENSE)
+
 ## Overview
 
 All the implementations share the same operations, on the same core types, these are:
@@ -44,7 +45,7 @@ completed.
 
 *Python: `WorkQueue.add_item`,
 Rust: [`WorkQueue::add_item`](https://docs.rs/redis-work-queue/latest/redis_work_queue/struct.WorkQueue.html#method.add_item),
-NodeJs TypeScript: [`WorkQueue::add_item`](WorkQueue-addItem),
+Node.js: [`WorkQueue::add_item`](WorkQueue-addItem),
 Go: [`WorkQueue.AddItem`](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go#WorkQueue.AddItem)*
 
 Adding an item is exactly what it sounds like! It adds an item to the work queue. It will then
@@ -55,7 +56,7 @@ until the job is completed.
 
 *Python: `WorkQueue.lease`,
 Rust: [`WorkQueue::lease`](https://docs.rs/redis-work-queue/latest/redis_work_queue/struct.WorkQueue.html#method.lease),
-NodeJs TypeScript: [`WorkQueue::lease`](WorkQueue-lease),
+Node.js: [`WorkQueue::lease`](WorkQueue-lease),
 Go: [`WorkQueue.Lease`](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go#WorkQueue.Lease)*
 
 Workers wanting to receive a job and complete it must start by obtaining a lease.
@@ -135,7 +136,7 @@ This works because `complete` returns `true` *iff* it is the worker that complet
 
 ### Completing an item
 
-*Python: [`WorkQueue.complete`](#),NodeJs TypeScript: [`WorkQueue.Complete`](#), Rust: [`WorkQueue::complete`](#), Go: [`WorkQueue.Complete`](#)*
+*Python: [`WorkQueue.complete`](#), Node.js: [`WorkQueue.Complete`](#), Rust: [`WorkQueue::complete`](#), Go: [`WorkQueue.Complete`](#)*
 
 Complete marks a job as completed and remove it from the work queue. After `complete` has been called
 (and returns `true`), no workers will receive this job again.
@@ -186,13 +187,13 @@ running the cleaning. We provide a simple cleaner, both in Python and Rust.
 *Python: `WorkQueue.queue_len`,
 Rust: [`WorkQueue::queue_len`](https://docs.rs/redis-work-queue/latest/redis_work_queue/struct.WorkQueue.html#method.queue_len),
 Go: [`WorkQueue.QueueLen`](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go#WorkQueue.QueueLen),
-NodeJs TypeScript: [`WorkQueue.queueLen`](WorkQueue.queueLen-link)*
+Node.js: [`WorkQueue.queueLen`](WorkQueue.queueLen-link)*
 
 #### Getting the number of leased items
 
 *Python: `WorkQueue.processing`,
 Rust: [`WorkQueue::processing`](https://docs.rs/redis-work-queue/latest/redis_work_queue/struct.WorkQueue.html#method.processing),
-NodeJs TypeScript: [`WorkQueue.processing`](WorkQueue.processing),
+Node.js: [`WorkQueue.processing`](WorkQueue.processing),
 Go: [`WorkQueue.QueueLen`](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go#WorkQueue.Processing)*
 
 This includes items being worked on and abandoned items (see [Handling errors](#handling-errors)) yet to be

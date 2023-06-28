@@ -8,6 +8,8 @@ const {KeyPrefix} = require('./KeyPrefix');
 const {Item} = require('./Item');
 const {v4: uuidv4} = require('uuid');
 
+export {KeyPrefix,Item}
+
 /**
  * A work queue backed by a redis database.
  */
@@ -35,18 +37,15 @@ export class WorkQueue {
    * Add an item to the work queue. This adds the redis commands onto the pipeline passed.
    * Use `WorkQueue.addItem` if you don't want to pass a pipeline directly.
    * Add the item data.
-   * NOTE: it's important that the data is added first, otherwise someone before the data is ready.
    * @param {Pipeline} pipeline The pipeline that the data will be executed.
    * @param {Item} item The Item which will be set in the Redis with the key of this.itemDataKey.of(itemId). .
    */
-  async addItemToPipeline(pipeline: Pipeline, item: typeof Item) {
+  addItemToPipeline(pipeline: Pipeline, item: typeof Item) {
     const itemId = item.id;
+    // NOTE: it's important that the data is added first, otherwise someone before the data is ready.
     pipeline.set(this.itemDataKey.of(itemId), item.data);
-    /**
-     * Then add the id to the work queue
-     */
+    // Then add the id to the work queue
     pipeline.lpush(this.mainQueueKey, itemId);
-    await pipeline.exec();
   }
 
   /**
@@ -56,9 +55,10 @@ export class WorkQueue {
    * @param {Redis} db The Redis Connection.
    * @param item The item that will be executed using the method addItemToPipeline.
    */
-  addItem(db: Redis, item: typeof Item): void {
+  async addItem(db: Redis, item: typeof Item): Promise<void> {
     const pipeline = db.pipeline() as unknown as Pipeline;
     this.addItemToPipeline(pipeline, item);
+    await pipeline.exec();
   }
 
   /**
@@ -89,9 +89,8 @@ export class WorkQueue {
    * @returns {Promise<boolean>}
    */
   async leaseExists(db: Redis, itemId: string): Promise<boolean> {
-    return await db.exists(this.leaseKey.of(itemId)).then(exists => {
-      return exists !== 0;
-    });
+    const exists = await db.exists(this.leaseKey.of(itemId));
+    return exists !== 0;
   }
 
   /**
@@ -267,4 +266,4 @@ export class WorkQueue {
   }
 }
 
-export {KeyPrefix, Item};
+export {KeyPrefix,Item}

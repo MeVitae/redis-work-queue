@@ -11,6 +11,7 @@ const typeScriptQueueKeyPrefix: KeyPrefix = new KeyPrefix('typeScript_jobs');
 const sharedQueueKeyPrefix: KeyPrefix = new KeyPrefix('shared_jobs');
 const typeScriptQueue: WorkQueue = new WorkQueue(typeScriptQueueKeyPrefix);
 const sharedQueue: WorkQueue = new WorkQueue(sharedQueueKeyPrefix);
+
 let typeScriptJobCounter: number = 0;
 let sharedJobCounter: number = 0;
 let shared: boolean = true;
@@ -28,7 +29,7 @@ async function main() {
        * If there was no job, continue.
        * Also, if we get 'unlucky', crash while completing the job.
       */
-      if (job === null) {
+      if (!job) {
         continue;
       }
 
@@ -53,7 +54,6 @@ async function main() {
       await db.set(sharedResultsKey.of(job.id), resultJson);
       //Complete Job
       await sharedQueue.complete(db, job);
-   
     } else {
         typeScriptJobCounter += 1;
         // First, try to get a job from the python job queue
@@ -83,7 +83,6 @@ async function main() {
         await db.set(typeScriptResultsKey.of(job.id), Buffer.from([result]));
         // Complete the job unless we're 'unlucky' and crash again
         if (typeScriptJobCounter % 29 !== 0) {
-
           if (await typeScriptQueue.complete(db, job)) {
             await sharedQueue.addItem(
               db,
@@ -111,9 +110,7 @@ async function main() {
 }
 
 function sleep(milliseconds: number): Promise<void> {
-  return new Promise<void>(resolve => {
-    setTimeout(resolve, milliseconds);
-  });
+  return new Promise<void>(resolve => setTimeout(resolve, milliseconds));
 }
 
 main();
