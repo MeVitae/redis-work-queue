@@ -8,7 +8,7 @@ const {KeyPrefix} = require('./KeyPrefix');
 const {Item} = require('./Item');
 const {v4: uuidv4} = require('uuid');
 
-export {KeyPrefix,Item}
+export {KeyPrefix, Item};
 
 /**
  * A work queue backed by a redis database.
@@ -199,52 +199,6 @@ export class WorkQueue {
   }
 
   /**
-   * Cleans up the Processing Queue by moving items to the Main Queue if the lease key is missing and performs additional checks to handle forgotten items in comparison with 'lightclean'.
-   *
-   * @param {Redis} db The redis Connection
-   *
-   * Process Explenation:
-   * If the lease key is not present for an item (it expired or was never created because the client crashed before creating it), then move the item back to the main queue so others can work on it.
-   * While working on an item, we store it in the cleaning list. If we ever crash, we come back and check these items.
-   */
-  async clean(db: Redis) {
-    const processing: Array<string> = await db.lrange(
-      this.processingKey,
-      0,
-      -1
-    );
-
-    for (const itemId of processing) {
-      if (!this.leaseExists(db, itemId)) {
-        await db.lpush(this.cleaningKey, itemId);
-        const removed = Number(db.lrem(this.processingKey, 0, itemId));
-        if (removed > 0) {
-          await db.lpush(this.processingKey, 0, itemId);
-        }
-        await db.lrem(this.cleaningKey, 0, itemId);
-      }
-    }
-
-    const forgot: Array<string> = await db.lrange(this.cleaningKey, 0, -1);
-    for (const itemId of forgot) {
-      const leaseExists: boolean = await this.leaseExists(db, itemId);
-      if (
-        !leaseExists &&
-        (await db.lpos(this.mainQueueKey, itemId)) == null &&
-        (await db.lpos(this.processingKey, itemId)) == null
-      ) {
-        /**
-         * FIXME: this introduces a race
-         * maybe not anymore
-         * no, it still does, what if the job has been completed?
-         */
-        await db.lpush(this.mainQueueKey, itemId);
-      }
-      await db.lrem(this.cleaningKey, 0, itemId);
-    }
-  }
-
-  /**
    * Marks a job as completed and remove it from the work queue.
    *
    * @param {Redis} db The Redis connection.
@@ -265,5 +219,3 @@ export class WorkQueue {
     return true;
   }
 }
-
-export {KeyPrefix,Item}
