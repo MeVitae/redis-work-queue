@@ -214,13 +214,9 @@ export class WorkQueue {
       }
     }
 
-    const forgot: Array<Buffer | string> = await db.lrange(this.cleaningKey, 0, -1);
+    const forgot: Array<string> = await db.lrange(this.cleaningKey, 0, -1);
 
     for (let itemId of forgot) {
-      if (Buffer.isBuffer(itemId)) {
-        itemId = itemId.toString('utf-8');
-      }
-
       const leaseExists: boolean = await this.leaseExists(db, itemId);
        if (!leaseExists && await db.lpos(this.mainQueueKey, itemId) == null && await db.lpos(this.processingKey, itemId) == null) {
         /**
