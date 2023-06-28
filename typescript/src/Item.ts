@@ -3,23 +3,22 @@
  * @description An item is used for work queue. Each item has an ID and associated data.
  */
 
-const { v4: uuidv4 } = require('uuid');
+const {v4: uuidv4} = require('uuid');
 
 type ItemData = {
-  [key: string]: any;
+  [key: string]: Buffer | string;
 };
 
 /**
  * An item is used for work queue. Each item has an ID and associated data.
  */
 export class Item {
-
   public data: Buffer | string;
   public id: string;
 
   /**
    * Create a Item instance.
-   * 
+   *
    * @param {string | Buffer} data - The data to associate with this item. Strings will be converted to bytes.
    * @param {string} [id] - ID of the Item, if null, a new (random UUID) ID is generated.
    */
@@ -41,17 +40,22 @@ export class Item {
 
   /**
    * Creates a Item instance containing the data passed through loaded.
-   * 
+   *
    * @param {ItemData} loaded The data needed to be converted to a item.
    * @returns {Item} a new Item instance loaded with item data.
    */
   static fromDict(loaded: ItemData): Item {
     let id: string | undefined;
     if ('id' in loaded) {
-      id = loaded['id'];
+      if (typeof loaded.id === 'string') {
+        id = loaded.id;
+      } else if (Buffer.isBuffer(loaded.id)) {
+        id = loaded.id.toString('utf-8');
+      }
     }
-    return new Item(loaded['data'], id);
+    return new Item(loaded.data, id);
   }
+  
 
   /**
    * Generates an item with the associated data as the JSON string of `data`.

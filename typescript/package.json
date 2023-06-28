@@ -1,0 +1,35 @@
+{
+  "name": "@mevitae/redis-work-queue",
+  "version": "1.0.1",
+  "main": "./src/WorkQueue.ts",
+  "description": "A work queue, on top of a redis database",
+  "keywords": [
+    "work queue",
+    "Redis"
+  ],
+  "authors": "Ilie Mihai Alexandru, Jacob O'Toole",
+  "license": "MIT",
+  "dependencies": {
+    "ioredis": "^5.3.2",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.3.1",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.1",
+    "typedoc": "^0.24.8",
+    "typescript": "^5.1.5",
+    "gts": "^3.1.1"
+  },
+  "scripts": {
+    "start": "ts-node ./src/WorkQueue.ts",
+    "check":"tsc",
+    "lint": "gts lint",
+    "clean": "gts clean",
+    "compile": "tsc",
+    "fix": "gts fix",
+    "prepare": "npm run compile",
+    "pretest": "npm run compile",
+    "posttest": "npm run lint"
+  }
+}

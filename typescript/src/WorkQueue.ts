@@ -3,10 +3,10 @@
  * @description A work queue backed by a redis database.
  */
 
-import Redis, { Pipeline } from "ioredis";
-const { KeyPrefix } = require("./KeyPrefix");
-const { Item } = require("./Item");
-const { v4 : uuidv4 } = require("uuid");
+import Redis, {Pipeline} from 'ioredis';
+const {KeyPrefix} = require('./KeyPrefix');
+const {Item} = require('./Item');
+const {v4: uuidv4} = require('uuid');
 
 /**
  * A work queue backed by a redis database.
@@ -52,7 +52,7 @@ export class WorkQueue {
   /**
    * Add an item to the work queue.
    * This creates a pipeline and executes it on the database.
-   * 
+   *
    * @param {Redis} db The Redis Connection.
    * @param item The item that will be executed using the method addItemToPipeline.
    */
@@ -63,7 +63,7 @@ export class WorkQueue {
 
   /**
    * This is used to get the lenght of the Main Queue.
-   * 
+   *
    * @param {Redis} db The Redis Connection.
    * @returns {Promise<number>} Return the length of the work queue (not including items being processed, see `WorkQueue.processing()`).
    */
@@ -73,7 +73,7 @@ export class WorkQueue {
 
   /**
    * This is used to get the lenght of the Processing Queue.
-   * 
+   *
    * @param {Redis} db The Redis Connection.
    * @returns {Promise<number>} The number of items being processed.
    */
@@ -83,13 +83,15 @@ export class WorkQueue {
 
   /**
    * This method can be used to check if a Lease Exists or not for a itemId.
-   * 
+   *
    * @param {Redis} db The Redis Connection.
    * @param {string} itemId The itemId of the item you want to check if it has a lease.
-   * @returns {Promise<boolean>} 
+   * @returns {Promise<boolean>}
    */
   async leaseExists(db: Redis, itemId: string): Promise<boolean> {
-    return await db.exists(this.leaseKey.of(itemId)).then(exists => {return exists !== 0});
+    return await db.exists(this.leaseKey.of(itemId)).then(exists => {
+      return exists !== 0;
+    });
   }
 
   /**
@@ -102,32 +104,41 @@ export class WorkQueue {
    *
    * If you haven't already, it's worth reading the documentation on leasing items:
    * https://github.com/MeVitae/redis-work-queue/blob/main/README.md#leasing-an-item
-   * 
+   *
    * @param {Redis} db The Redis Connection.
    * @param {number} leaseSecs The number of seconds that the lease should hold.
    * @param {boolean} block Is a block or not, default is true.
    * @param {number} timeout The number of seconds the lease will time out at.
    * @returns {Promise<typeof Item>} Returns a new lease Item.
-   * 
+   *
    * Process:
    * First, to get an item, we try to move an item from the main queue to the processing list.
    * Then we setup the lease item.
-  */
-  async lease(db:Redis, leaseSecs:number, block:boolean = true, timeout:number = 1): Promise<typeof Item> {
-    let maybeItemId = null;
+   */
+  async lease(
+    db: Redis,
+    leaseSecs: number,
+    block = true,
+    timeout = 1
+  ): Promise<typeof Item> {
+    let maybeItemId:string|null = null;
     let itemId;
-  
+
     // Try to move an item from the main queue to the processing list.
     if (block) {
-      maybeItemId = await db.brpoplpush(this.mainQueueKey, this.processingKey, timeout);
+      maybeItemId = await db.brpoplpush(
+        this.mainQueueKey,
+        this.processingKey,
+        timeout
+      );
     } else {
       maybeItemId = await db.rpoplpush(this.mainQueueKey, this.processingKey);
     }
-    
+
     if (maybeItemId == null) {
       return null;
     }
-  
+
     itemId = maybeItemId;
 
     let data: Buffer | null = await db.getBuffer(this.itemDataKey.of(itemId));
@@ -138,26 +149,30 @@ export class WorkQueue {
 
     // Setup the lease item.
     await db.setex(this.leaseKey.of(itemId), leaseSecs, this.session);
-    const item = new Item(data, itemId)
+    const item = new Item(data, itemId);
     return item;
   }
 
   /**
    * Moves items from the processing Queue to the Main Queue if the lease key is missing.
    * This can be used in case worker dies or crashes and item is hold onto the processing, this allows the item to be moved onto another worker.
-   * 
+   *
    * @param {Redis} db The Redis connection.
-   * 
+   *
    * Process Explenation:
    * If the lease key is not present for an item (it expired or was never created because the client crashed before creating it), then move the item back to the main queue so others can work on it.
    * While working on an item, we store it in the cleaning list. If we ever crash, we come back and check these items.
    */
   async lightClean(db: Redis) {
-    const processing: Array<string> = await db.lrange(this.processingKey, 0, -1);
-    for (let itemId of processing) {
-      if (!await this.leaseExists(db, itemId)) {
+    const processing: Array<string> = await db.lrange(
+      this.processingKey,
+      0,
+      -1
+    );
+    for (const itemId of processing) {
+      if (!(await this.leaseExists(db, itemId))) {
         await db.lpush(this.cleaningKey, itemId);
-        let removed = await db.lrem(this.processingKey, 0, itemId);
+        const removed = await db.lrem(this.processingKey, 0, itemId);
         if (removed > 0) {
           await db.lpush(this.mainQueueKey, 0, itemId);
         }
@@ -165,11 +180,14 @@ export class WorkQueue {
       }
     }
 
-
     const forgot: Array<string> = await db.lrange(this.cleaningKey, 0, -1);
-    for (let itemId of forgot) {
+    for (const itemId of forgot) {
       const leaseExists: boolean = await this.leaseExists(db, itemId);
-       if (!leaseExists && await db.lpos(this.mainQueueKey, itemId) == null && await db.lpos(this.processingKey, itemId) == null) {
+      if (
+        !leaseExists &&
+        (await db.lpos(this.mainQueueKey, itemId)) == null &&
+        (await db.lpos(this.processingKey, itemId)) == null
+      ) {
         /**
          * FIXME: this introduces a race
          * maybe not anymore
@@ -183,20 +201,24 @@ export class WorkQueue {
 
   /**
    * Cleans up the Processing Queue by moving items to the Main Queue if the lease key is missing and performs additional checks to handle forgotten items in comparison with 'lightclean'.
-   * 
+   *
    * @param {Redis} db The redis Connection
-   * 
+   *
    * Process Explenation:
    * If the lease key is not present for an item (it expired or was never created because the client crashed before creating it), then move the item back to the main queue so others can work on it.
    * While working on an item, we store it in the cleaning list. If we ever crash, we come back and check these items.
    */
   async clean(db: Redis) {
-    const processing: Array<string> = await db.lrange(this.processingKey, 0, -1);
+    const processing: Array<string> = await db.lrange(
+      this.processingKey,
+      0,
+      -1
+    );
 
-    for (let itemId of processing) {
+    for (const itemId of processing) {
       if (!this.leaseExists(db, itemId)) {
         await db.lpush(this.cleaningKey, itemId);
-        let removed = Number(db.lrem(this.processingKey, 0, itemId));
+        const removed = Number(db.lrem(this.processingKey, 0, itemId));
         if (removed > 0) {
           await db.lpush(this.processingKey, 0, itemId);
         }
@@ -205,9 +227,13 @@ export class WorkQueue {
     }
 
     const forgot: Array<string> = await db.lrange(this.cleaningKey, 0, -1);
-    for (let itemId of forgot) {
+    for (const itemId of forgot) {
       const leaseExists: boolean = await this.leaseExists(db, itemId);
-       if (!leaseExists && await db.lpos(this.mainQueueKey, itemId) == null && await db.lpos(this.processingKey, itemId) == null) {
+      if (
+        !leaseExists &&
+        (await db.lpos(this.mainQueueKey, itemId)) == null &&
+        (await db.lpos(this.processingKey, itemId)) == null
+      ) {
         /**
          * FIXME: this introduces a race
          * maybe not anymore
@@ -219,15 +245,14 @@ export class WorkQueue {
     }
   }
 
-
   /**
    * Marks a job as completed and remove it from the work queue.
-   * 
+   *
    * @param {Redis} db The Redis connection.
    * @param {Item} item The Item which the processing got completed
    * @returns {boolean} returns a boolean indicating if *the job has been removed* **and** *this worker was the first worker to call `complete`*. So, while lease might give the same job to multiple workers, complete will return `true` for only one worker.
    */
-  async complete(db:Redis,item: typeof Item): Promise<boolean> {
+  async complete(db: Redis, item: typeof Item): Promise<boolean> {
     const removed = await db.lrem(this.processingKey, 0, item.id);
     if (removed === 0) {
       return false;
@@ -236,9 +261,10 @@ export class WorkQueue {
     const pipeline = db.pipeline();
     pipeline.del(this.itemDataKey.of(item.id));
     pipeline.del(this.leaseKey.of(item.id));
-    await pipeline.exec()
+    await pipeline.exec();
 
     return true;
   }
-  
 }
+
+export {KeyPrefix,Item}
