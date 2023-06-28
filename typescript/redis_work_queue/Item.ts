@@ -1,22 +1,29 @@
-const { v4: uuidv4 } = require('uuid');
+/**
+ * @module Item
+ * @description An item is used for work queue. Each item has an ID and associated data.
+ */
 
+const { v4: uuidv4 } = require('uuid');
 
 type ItemData = {
   [key: string]: any;
 };
 
+/**
+ * An item is used for work queue. Each item has an ID and associated data.
+ */
 export class Item {
-  // An item for a work queue. Each item has an ID and associated data.
 
   public data: Buffer | string;
   public id: string;
 
+  /**
+   * Create a Item instance.
+   * 
+   * @param {string | Buffer} data - The data to associate with this item. Strings will be converted to bytes.
+   * @param {string} [id] - ID of the Item, if null, a new (random UUID) ID is generated.
+   */
   constructor(data: string | Buffer, id?: string) {
-    /**
-     * Args:
-     * data (bytes or str): Data to associate with this item, strings will be converted to bytes.
-     * id (str | null): ID of the Item, if null, a new (random UUID) ID is generated.
-     */
     if (!(data instanceof Buffer)) {
       this.data = Buffer.from(data);
     } else {
@@ -33,33 +40,36 @@ export class Item {
 
   
   }
-
+  /**
+   * Creates a Item instance containing the data passed through loaded.
+   * 
+   * @param {ItemData} loaded The data needed to be converted to a item.
+   * @returns {Item} a new Item instance loaded with item data.
+   */
   static fromDict(loaded: ItemData): Item {
-    // Create an `Item` from a dictionary containing 'data' and, optionally, 'id'.
     let id: string | undefined = undefined;
+
     if ('id' in loaded) {
       id = loaded['id'];
     }
     return new Item(loaded['data'], id);
   }
 
-  static parse(string: string) {
-    // Parse an `Item` from JSON. The JSON structure should be an object with a 'data' key and, optionally, an 'id' key.
-    return JSON.parse(string);
-  }
-
-  static fromJsonData(data: string, id?: string) {
-    //Generate an item where the associated data is the JSON string of `data`.
+  /**
+   * Generates an item with the associated data as the JSON string of `data`.
+   * @param {string} data - The data to associate with the item.
+   * @param {string} [id] - The ID of the item. If null or undefined, a new random UUID is generated.
+   * @returns {Item} A new Item instance with the associated data as the JSON string of `data`.
+   */
+  static fromJsonData(data: string, id?: string): Item {
     return new Item(JSON.stringify(data), id);
   }
 
-  Data() {
-    // Get the data associated with this item.
-    return this.data;
-  }
-
+  /**
+   * Get the data associated with this item, parsed as JSON.
+   * @returns {any} The parsed JSON data or an empty object if parsing fails.
+   */
   dataJson(): any {
-    // Get the data associated with this item, parsed as JSON.
     let jsonString: string;
     if (Buffer.isBuffer(this.data)) {
       jsonString = this.data.toString('utf-8');
@@ -72,12 +82,5 @@ export class Item {
     } catch (error) {
       return {};
     }
-  }
-  
-  
-
-  Id(): string {
-    // Get the ID of the item.
-    return this.id;
   }
 }

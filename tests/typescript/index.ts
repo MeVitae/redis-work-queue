@@ -1,7 +1,7 @@
 import Redis from 'ioredis';
 import { Item } from '../../typescript/redis_work_queue/Item';
 import { KeyPrefix } from '../../typescript/redis_work_queue/KeyPrefix';
-import { WorkQueue } from '../../typescript/redis_work_queue/index';
+import { WorkQueue } from '../../typescript/redis_work_queue/WorkQueue';
 
 const redisHost: string = process.argv[2];
 const db: Redis = new Redis(redisHost);
@@ -50,7 +50,7 @@ async function main() {
         await sleep((sharedJobCounter % 4)*1000);
       }
       // store result
-      await db.set(sharedResultsKey.of(job.Id()), resultJson);
+      await db.set(sharedResultsKey.of(job.id), resultJson);
       //Complete Job
       await sharedQueue.complete(db, job);
    
@@ -80,7 +80,7 @@ async function main() {
         }
 
         //Store result
-        await db.set(typeScriptResultsKey.of(job.Id()), Buffer.from([result]));
+        await db.set(typeScriptResultsKey.of(job.id), Buffer.from([result]));
         // Complete the job unless we're 'unlucky' and crash again
         if (typeScriptJobCounter % 29 !== 0) {
 

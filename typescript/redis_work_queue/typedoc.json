@@ -1,0 +1,8 @@
+{
+    "out": "docs",
+    "entryPoints": ["."], 
+    "exclude": ["./node_modules","./dist"],
+    "excludeExternals": true
+  }
+  
+// use this to create docs: npx typedoc --entryPoints WorkQueue.ts Item.ts KeyPrefix.ts
