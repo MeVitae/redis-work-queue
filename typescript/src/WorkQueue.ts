@@ -55,10 +55,10 @@ export class WorkQueue {
    * @param {Redis} db The Redis Connection.
    * @param item The item that will be executed using the method addItemToPipeline.
    */
-  addItem(db: Redis, item: typeof Item): Promise<void> {
+  async addItem(db: Redis, item: typeof Item): Promise<void> {
     const pipeline = db.pipeline() as unknown as Pipeline;
     this.addItemToPipeline(pipeline, item);
-    return pipeline.exec();
+    await pipeline.exec();
   }
 
   /**
