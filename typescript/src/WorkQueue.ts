@@ -8,6 +8,8 @@ const {KeyPrefix} = require('./KeyPrefix');
 const {Item} = require('./Item');
 const {v4: uuidv4} = require('uuid');
 
+export {KeyPrefix,Item}
+
 /**
  * A work queue backed by a redis database.
  */
@@ -87,9 +89,8 @@ export class WorkQueue {
    * @returns {Promise<boolean>}
    */
   async leaseExists(db: Redis, itemId: string): Promise<boolean> {
-    return await db.exists(this.leaseKey.of(itemId)).then(exists => {
-      return exists !== 0;
-    });
+    const exists = await db.exists(this.leaseKey.of(itemId));
+    return exists !== 0;
   }
 
   /**
@@ -264,5 +265,3 @@ export class WorkQueue {
     return true;
   }
 }
-
-export {KeyPrefix,Item}
