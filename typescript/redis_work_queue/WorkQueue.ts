@@ -75,9 +75,9 @@ export class WorkQueue {
    * This is used to get the lenght of the Processing Queue.
    * 
    * @param {Redis} db The Redis Connection.
-   * @returns The number of items being processed.
+   * @returns {Promise<number>} The number of items being processed.
    */
-  processing(db: Redis) {
+  processing(db: Redis): Promise<number> {
     return db.llen(this.processingKey);
   }
 
