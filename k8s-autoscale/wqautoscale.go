@@ -10,8 +10,8 @@ import (
 	apps "k8s.io/client-go/kubernetes/typed/apps/v1"
 	"k8s.io/client-go/rest"
 
-	redis "github.com/redis/go-redis/v9"
 	workqueue "github.com/mevitae/redis-work-queue/go"
+	redis "github.com/redis/go-redis/v9"
 )
 
 type WorkerCounts struct {
@@ -22,7 +22,7 @@ type WorkerCounts struct {
 
 // Smoother provides an interface for types which provide smoothing to scaling.
 type Smoother interface {
-    ScaleTo(WorkerCounts) WorkerCounts
+	ScaleTo(WorkerCounts) WorkerCounts
 }
 
 // SlowDown is a Smoother which delays the downscaling of WorkerCounts without slowing down the
@@ -228,7 +228,7 @@ func (workers *Workers) Tick(ctx context.Context) error {
 		return err
 	}
 	// Determine the current length of the work queue
-    qlen, err := workers.queue.QueueLen(ctx, workers.db)
+	qlen, err := workers.queue.QueueLen(ctx, workers.db)
 	if err != nil {
 		return err
 	}
@@ -278,47 +278,38 @@ type AutoScale struct {
 	clientset *kubernetes.Clientset
 	// config for connecting to k8s
 	config *rest.Config
-	// namespace of the deployments in k8s
-	namespace string
+	// queues that should be autoscaled
+	queues []Workers
+}
 
-	// section detection workers
-	section Workers
-	// person detection workers
-	person Workers
-	// reading order workers
-	reading Workers
-	// section classification workers
-	sectionClass Workers
-	// feature extraction workers
-	featureExtraction Workers
+func NewAutoScale(config *rest.Config, queues []Workers) (*AutoScale, error) {
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	return &AutoScale{
+		config:    config,
+		clientset: clientset,
+		queues:    queues,
+	}, nil
+}
+
+// InClusterAutoScale returns an autoscaler which scales the cluster the pod running in!
+func InClusterAutoScale(queues []Workers) (*AutoScale, error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+	return NewAutoScale(config, queues)
 }
 
 // Tick should be called repeatedly to scale the cluster.
 func (autoscale *AutoScale) Tick(ctx context.Context) error {
-	fmt.Println("Scaling person detection")
-	err := autoscale.person.Tick(ctx)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Scaling section detection")
-	err = autoscale.section.Tick(ctx)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Scaling reading order")
-	err = autoscale.reading.Tick(ctx)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Scaling section classification")
-	err = autoscale.sectionClass.Tick(ctx)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Scaling feature extraction")
-	err = autoscale.featureExtraction.Tick(ctx)
-	if err != nil {
-		return err
+	for idx := range autoscale.queues {
+		err := autoscale.queues[idx].Tick(ctx)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
