@@ -1,6 +1,6 @@
 {
   "name": "@mevitae/redis-work-queue",
-  "version": "1.0.1",
+  "version": "0.0.4",
   "main": "./src/WorkQueue.ts",
   "description": "A work queue, on top of a redis database",
   "keywords": [

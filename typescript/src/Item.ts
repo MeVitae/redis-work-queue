@@ -44,7 +44,7 @@ export class Item {
    * @param {ItemData} loaded The data needed to be converted to a item.
    * @returns {Item} a new Item instance loaded with item data.
    */
-  static fromDict(loaded: ItemData): Item {
+  static fromObject(loaded: ItemData): Item {
     let id: string | undefined;
     if ('id' in loaded) {
       if (typeof loaded.id === 'string') {
@@ -55,7 +55,6 @@ export class Item {
     }
     return new Item(loaded.data, id);
   }
-  
 
   /**
    * Generates an item with the associated data as the JSON string of `data`.

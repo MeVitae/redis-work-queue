@@ -121,7 +121,7 @@ export class WorkQueue {
     block = true,
     timeout = 1
   ): Promise<typeof Item> {
-    let maybeItemId:string|null = null;
+    let maybeItemId: string | null = null;
     let itemId;
 
     // Try to move an item from the main queue to the processing list.
@@ -267,4 +267,4 @@ export class WorkQueue {
   }
 }
 
-export {KeyPrefix,Item}
+export {KeyPrefix, Item};
