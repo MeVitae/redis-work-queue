@@ -22,10 +22,11 @@ reference.
   [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 - Go: [![Go Report Card](https://goreportcard.com/badge/github.com/mevitae/redis-work-queue/go)](https://goreportcard.com/report/github.com/mevitae/redis-work-queue/go)
+
   [![GoDoc](https://pkg.go.dev/badge/github.com/mevitae-redis-work-queue/go)](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go)
   [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-- Node.js (TypeScript): [![TypeScript Report Card] (https://img.shields.io/badge/NPM-v0.0.4-red) )](https://www.npmjs.com/package/@mevitae/redis-work-queue)
+- Node.js (TypeScript): [![TypeScript Report Card](https://img.shields.io/badge/NPM-v0.0.4-red)](https://www.npmjs.com/package/@mevitae/redis-work-queue)
   [![npm](badge)](docs)
   [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./typescript/LICENSE)
 
