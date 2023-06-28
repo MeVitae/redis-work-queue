@@ -37,9 +37,8 @@ export class Item {
     } else {
       this.id = id;
     }
-
-  
   }
+
   /**
    * Creates a Item instance containing the data passed through loaded.
    * 
@@ -47,8 +46,7 @@ export class Item {
    * @returns {Item} a new Item instance loaded with item data.
    */
   static fromDict(loaded: ItemData): Item {
-    let id: string | undefined = undefined;
-
+    let id: string | undefined;
     if ('id' in loaded) {
       id = loaded['id'];
     }
@@ -77,7 +75,6 @@ export class Item {
       jsonString = this.data;
     }
     try {
-        console.log(jsonString)
       return JSON.parse(jsonString);
     } catch (error) {
       return {};

@@ -15,7 +15,6 @@
  * ```
  */
 export class KeyPrefix {
-
   /**
    * KeyPrefix instance prefix.
    */

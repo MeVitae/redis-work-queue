@@ -154,25 +154,19 @@ export class WorkQueue {
    */
   async lightClean(db: Redis) {
     const processing: Array<string> = await db.lrange(this.processingKey, 0, -1);
-    
     for (let itemId of processing) {
-
       if (!await this.leaseExists(db, itemId)) {
-
         await db.lpush(this.cleaningKey, itemId);
         let removed = await db.lrem(this.processingKey, 0, itemId);
-
         if (removed > 0) {
           await db.lpush(this.mainQueueKey, 0, itemId);
         }
-
         await db.lrem(this.cleaningKey, 0, itemId);
       }
     }
 
 
     const forgot: Array<string> = await db.lrange(this.cleaningKey, 0, -1);
-
     for (let itemId of forgot) {
       const leaseExists: boolean = await this.leaseExists(db, itemId);
        if (!leaseExists && await db.lpos(this.mainQueueKey, itemId) == null && await db.lpos(this.processingKey, itemId) == null) {
@@ -186,6 +180,7 @@ export class WorkQueue {
       await db.lrem(this.cleaningKey, 0, itemId);
     }
   }
+
   /**
    * Cleans up the Processing Queue by moving items to the Main Queue if the lease key is missing and performs additional checks to handle forgotten items in comparison with 'lightclean'.
    * 
@@ -199,23 +194,17 @@ export class WorkQueue {
     const processing: Array<string> = await db.lrange(this.processingKey, 0, -1);
 
     for (let itemId of processing) {
-
       if (!this.leaseExists(db, itemId)) {
-
         await db.lpush(this.cleaningKey, itemId);
         let removed = Number(db.lrem(this.processingKey, 0, itemId));
-
         if (removed > 0) {
           await db.lpush(this.processingKey, 0, itemId);
-
         }
-
         await db.lrem(this.cleaningKey, 0, itemId);
       }
     }
 
     const forgot: Array<string> = await db.lrange(this.cleaningKey, 0, -1);
-
     for (let itemId of forgot) {
       const leaseExists: boolean = await this.leaseExists(db, itemId);
        if (!leaseExists && await db.lpos(this.mainQueueKey, itemId) == null && await db.lpos(this.processingKey, itemId) == null) {
@@ -238,10 +227,8 @@ export class WorkQueue {
    * @param {Item} item The Item which the processing got completed
    * @returns {boolean} returns a boolean indicating if *the job has been removed* **and** *this worker was the first worker to call `complete`*. So, while lease might give the same job to multiple workers, complete will return `true` for only one worker.
    */
-  async complete(db:Redis,item: typeof Item) {  
-
+  async complete(db:Redis,item: typeof Item): Promise<boolean> {
     const removed = await db.lrem(this.processingKey, 0, item.id);
-
     if (removed === 0) {
       return false;
     }
@@ -255,4 +242,3 @@ export class WorkQueue {
   }
   
 }
-
