@@ -65,7 +65,7 @@ export class Item {
 
   /**
    * Get the data associated with this item, parsed as JSON.
-   * @returns {any} The parsed JSON data or an empty object if parsing fails.
+   * @returns {any} The parsed JSON data.
    */
   dataJson(): any {
     let jsonString: string;
@@ -74,10 +74,6 @@ export class Item {
     } else {
       jsonString = this.data;
     }
-    try {
-      return JSON.parse(jsonString);
-    } catch (error) {
-      return {};
-    }
+    return JSON.parse(jsonString);
   }
 }
