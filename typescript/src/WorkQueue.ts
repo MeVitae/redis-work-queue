@@ -35,18 +35,15 @@ export class WorkQueue {
    * Add an item to the work queue. This adds the redis commands onto the pipeline passed.
    * Use `WorkQueue.addItem` if you don't want to pass a pipeline directly.
    * Add the item data.
-   * NOTE: it's important that the data is added first, otherwise someone before the data is ready.
    * @param {Pipeline} pipeline The pipeline that the data will be executed.
    * @param {Item} item The Item which will be set in the Redis with the key of this.itemDataKey.of(itemId). .
    */
-  async addItemToPipeline(pipeline: Pipeline, item: typeof Item) {
+  addItemToPipeline(pipeline: Pipeline, item: typeof Item) {
     const itemId = item.id;
+    // NOTE: it's important that the data is added first, otherwise someone before the data is ready.
     pipeline.set(this.itemDataKey.of(itemId), item.data);
-    /**
-     * Then add the id to the work queue
-     */
+    // Then add the id to the work queue
     pipeline.lpush(this.mainQueueKey, itemId);
-    await pipeline.exec();
   }
 
   /**
@@ -56,9 +53,10 @@ export class WorkQueue {
    * @param {Redis} db The Redis Connection.
    * @param item The item that will be executed using the method addItemToPipeline.
    */
-  addItem(db: Redis, item: typeof Item): void {
+  addItem(db: Redis, item: typeof Item): Promise<void> {
     const pipeline = db.pipeline() as unknown as Pipeline;
     this.addItemToPipeline(pipeline, item);
+    return pipeline.exec();
   }
 
   /**
