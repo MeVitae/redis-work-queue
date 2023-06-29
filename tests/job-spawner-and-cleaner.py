@@ -62,12 +62,9 @@ while doom_counter < 20:
             queue.light_clean(db)
 
     # The `doom_counter` counts the number of consecutive times all the lengths are 0.
-    if all(map(
+    doom_counter = doom_counter + 1 if all(map(
         lambda queue: queue.queue_len(db) == 0 and queue.processing(db) == 0, queue_list,
-    )):
-        doom_counter += 1
-    else:
-        doom_counter = 0
+    )) else 0
     counter += 1
 
 # These are the results are still expecting, when a result is found, it's removed from these lists.
