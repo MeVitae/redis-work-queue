@@ -68,7 +68,7 @@ async function main() {
         }
 
         //Generate result
-        const data = job.data;
+        const data: any = job.data;
         const result = (data[0] * 17) % 256;
         
         /*

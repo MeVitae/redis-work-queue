@@ -10,12 +10,28 @@ To start a redis server without persistence, you can run:
 echo -e 'save ""\nappendonly no' | redis-server -
 ```
 
-### Run the tests
+##### Runing the tests
 
 From the `tests` directory, run:
 
 ```bash
-./run-test.sh
+./run-test.sh --help
+```
+This will give you a overview of the available commands
+
+### Options
+
+## -- tests
+    You can use the --tests command to test specific languages.
+# Example:
+```bash
+    ./run-test.sh --tests "go_jobs,python_jobs"
+```
+## --host
+    This can be used to set a specific host, the default is localhost.
+# Example:
+```bash
+    ./run-test.sh --tests "go_jobs,python_jobs" --host example.server.net:port
 ```
 
 ## Unit tests also exist

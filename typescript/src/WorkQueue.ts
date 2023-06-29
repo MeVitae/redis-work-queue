@@ -4,8 +4,8 @@
  */
 
 import Redis, {Pipeline} from 'ioredis';
-const {KeyPrefix} = require('./KeyPrefix');
-const {Item} = require('./Item');
+import {KeyPrefix} from './KeyPrefix';
+import {Item} from './Item';
 const {v4: uuidv4} = require('uuid');
 
 export {KeyPrefix, Item};
@@ -18,13 +18,13 @@ export class WorkQueue {
   private mainQueueKey: string;
   private processingKey: string;
   private cleaningKey: string;
-  private leaseKey: typeof KeyPrefix;
-  private itemDataKey: typeof KeyPrefix;
+  private leaseKey: KeyPrefix;
+  private itemDataKey: KeyPrefix;
 
   /**
    * @param {KeyPrefix} name This is the prefix created for the WorkQueue.
    */
-  constructor(name: typeof KeyPrefix) {
+  constructor(name: KeyPrefix) {
     this.mainQueueKey = name.of(':queue');
     this.processingKey = name.of(':processing');
     this.cleaningKey = name.of(':cleaning');
@@ -40,7 +40,7 @@ export class WorkQueue {
    * @param {Pipeline} pipeline The pipeline that the data will be executed.
    * @param {Item} item The Item which will be set in the Redis with the key of this.itemDataKey.of(itemId). .
    */
-  addItemToPipeline(pipeline: Pipeline, item: typeof Item) {
+  addItemToPipeline(pipeline: Pipeline, item:  Item) {
     const itemId = item.id;
     // NOTE: it's important that the data is added first, otherwise someone before the data is ready.
     pipeline.set(this.itemDataKey.of(itemId), item.data);
@@ -55,7 +55,7 @@ export class WorkQueue {
    * @param {Redis} db The Redis Connection.
    * @param item The item that will be executed using the method addItemToPipeline.
    */
-  async addItem(db: Redis, item: typeof Item): Promise<void> {
+  async addItem(db: Redis, item: Item): Promise<void> {
     const pipeline = db.pipeline() as unknown as Pipeline;
     this.addItemToPipeline(pipeline, item);
     await pipeline.exec();
@@ -108,7 +108,7 @@ export class WorkQueue {
    * @param {number} leaseSecs The number of seconds that the lease should hold.
    * @param {boolean} block Is a block or not, default is true.
    * @param {number} timeout The number of seconds the lease will time out at.
-   * @returns {Promise<typeof Item>} Returns a new lease Item.
+   * @returns {Promise<Item>} Returns a new lease Item.
    *
    * Process:
    * First, to get an item, we try to move an item from the main queue to the processing list.
@@ -119,7 +119,7 @@ export class WorkQueue {
     leaseSecs: number,
     block = true,
     timeout = 1
-  ): Promise<typeof Item> {
+  ): Promise<Item|null> {
     let maybeItemId: string | null = null;
     let itemId;
 
@@ -205,7 +205,7 @@ export class WorkQueue {
    * @param {Item} item The Item which the processing got completed
    * @returns {boolean} returns a boolean indicating if *the job has been removed* **and** *this worker was the first worker to call `complete`*. So, while lease might give the same job to multiple workers, complete will return `true` for only one worker.
    */
-  async complete(db: Redis, item: typeof Item): Promise<boolean> {
+  async complete(db: Redis, item: Item): Promise<boolean> {
     const removed = await db.lrem(this.processingKey, 0, item.id);
     if (removed === 0) {
       return false;

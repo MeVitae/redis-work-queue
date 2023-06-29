@@ -76,7 +76,7 @@ export class Item {
       jsonString = this.data.toString('utf-8');
     } else {
       jsonString = this.data;
-    }
+    } 
     return JSON.parse(jsonString);
   }
 }

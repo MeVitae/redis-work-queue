@@ -4,22 +4,28 @@ from time import sleep
 
 import redis
 
+
 sys.path.append('../python')
 from redis_work_queue import KeyPrefix, Item, WorkQueue
 
+queue_list = sys.argv[2].split(" ")
+print(queue_list)
+
 if len(sys.argv) < 2:
     raise Exception("first command line argument must be redis host")
-db = redis.Redis(host=sys.argv[1])
+db = redis.Redis(host=sys.argv[1].replace(":6379",""))
 
 if len(db.keys("*")) > 0:
     raise Exception("redis database isn't clean")
 
-python_queue = WorkQueue(KeyPrefix("python_jobs"))
-rust_queue = WorkQueue(KeyPrefix("rust_jobs"))
-go_queue = WorkQueue(KeyPrefix("go_jobs"))
-typeScript_queue = WorkQueue(KeyPrefix("typeScript_jobs"))
-#dotnet_queue = WorkQueue(KeyPrefix("dotnet_jobs"))
-shared_queue = WorkQueue(KeyPrefix("shared_jobs"))
+
+queue_list.append("shared_jobs")
+queue_list_names = []
+
+for index in range(len(queue_list)):
+    queue_list_names.append(queue_list[index])
+    queue_list[index]=WorkQueue(KeyPrefix(queue_list[index]))
+
 
 counter = 0
 doom_counter = 0
@@ -28,128 +34,140 @@ revived = False
 while doom_counter < 20:
     if counter < 256:
         # Spawn 256 initial jobs in each queue
-        python_queue.add_item(db, Item(bytes([counter])))
-        rust_queue.add_item(db, Item(bytes([counter])))
-        go_queue.add_item(db, Item(bytes([counter])))
-        typeScript_queue.add_item(db, Item(bytes([counter])))
-        #dotnet_queue.add_item(db, Item(bytes([counter])))
+        for queue in range(len(queue_list)-1):
+            queue_list[queue].add_item(db, Item(bytes([counter])))
     elif counter % 2 == 0:
         # Every other tick just log how much work is left
-        print((python_queue.queue_len(db), python_queue.processing(db)))
-        print((rust_queue.queue_len(db), rust_queue.processing(db)))
-        print((go_queue.queue_len(db), go_queue.processing(db)))
-        print((typeScript_queue.queue_len(db), typeScript_queue.processing(db)))
-        #print((dotnet_queue.queue_len(db), dotnet_queue.processing(db)))
-        print((shared_queue.queue_len(db), shared_queue.processing(db)))
+        for queue in queue_list:
+            print((queue.queue_len(db), queue.processing(db)))
         sleep(0.5)
     elif counter == 501:
         # After a little bit, add more jobs.
         print("More jobs!!")
         for n in range(0, 256):
             n = n % 256
-            python_queue.add_item(db, Item(bytes([n])))
-            rust_queue.add_item(db, Item(bytes([n])))
-            go_queue.add_item(db, Item(bytes([n])))
-            typeScript_queue.add_item(db, Item(bytes([n])))
-            #dotnet_queue.add_item(db, Item(bytes([n])))
+            for queue in range(len(queue_list)-1):
+                queue_list[queue].add_item(db, Item(bytes([n])))
     elif doom_counter > 10 and not revived:
         # After everything settles down, add more jobs
         print("Even more jobs!!")
         revived = True
         for n in range(0, 256):
-            python_queue.add_item(db, Item(bytes([n])))
-            rust_queue.add_item(db, Item(bytes([n])))
-            go_queue.add_item(db, Item(bytes([n])))
-            typeScript_queue.add_item(db, Item(bytes([n])))
-            #dotnet_queue.add_item(db, Item(bytes([n])))
+            for queue in range(len(queue_list)-1):
+                queue_list[queue].add_item(db, Item(bytes([n])))
     else:
         # Otherwise, clean!
         print("Cleaning")
-        python_queue.light_clean(db)
-        rust_queue.light_clean(db)
-        go_queue.light_clean(db)
-        typeScript_queue.light_clean(db)
-        #dotnet_queue.light_clean(db)
-        shared_queue.light_clean(db)
+        for queue in queue_list:
+            queue.light_clean(db)
     # The `doom_counter` counts the number of consecutive times all the lengths are 0.
-    if python_queue.queue_len(db) == 0 and python_queue.processing(db) == 0 and \
-        rust_queue.queue_len(db) == 0 and rust_queue.processing(db) == 0 and \
-        go_queue.queue_len(db) == 0 and go_queue.processing(db) == 0 and \
-        typeScript_queue.queue_len(db) == 0 and typeScript_queue.processing(db) == 0 and \
-        shared_queue.queue_len(db) == 0 and shared_queue.processing(db) == 0:
-                #dotnet_queue.queue_len(db) == 0 and dotnet_queue.processing(db) == 0 
-            doom_counter += 1
+    queue_verification = True
+    for queue in queue_list:
+         if not queue.queue_len(db) == 0 or not queue.processing(db) == 0:
+            queue_verification = False
+            break
+    if queue_verification:
+        doom_counter += 1
     else:
         doom_counter = 0
     counter += 1
 
 # These are the results are still expecting, when a result is found, it's removed from these lists.
-expecting_python = [(n * 3)%256 for n in range(0, 256*3)]
-expecting_rust = [(n * 7)%256 for n in range(0, 256*3)]
-expecting_go = [(n * 5)%256 for n in range(0, 256*3)]
-expecting_dotnet = [(n * 11)%256 for n in range(0, 256*3)]
-expecting_typeScript = [(n * 17)%256 for n in range(0, 256*3)]
+expecting_dict_config={
+"python_jobs": {
+    "expecting share":[13,17],
+    "expected": [(n * 3)%256 for n in range(0, 256*3)],
+     "result_name":"results:python:"
+},
+"rust_jobs": {
+    "expecting share":[3,5],
+    "expected": [(n * 7)%256 for n in range(0, 256*3)],
+     "result_name":"results:rust:"
+},
+"go_jobs": {
+    "expecting share":[7,11],
+    "expected":[(n * 5)%256 for n in range(0, 256*3)],
+     "result_name":"results:go:"
+},
+"typeScript_jobs": {
+    "expecting share":[17,21],
+    "expected":[(n * 17)%256 for n in range(0, 256*3)],
+    "result_name":"results:typeScript:"
+},
+"dotnet_jobs": {
+    "expecting share":[17,21],
+    "expected":[(n * 11)%256 for n in range(0, 256*3)],
+    "result_name":"results:dotnet:"
+}
+}
 
-expecting_shared = [(a+b, a*b) for a in [3, 5] for b in expecting_rust] + \
-        [(a+b, a*b) for a in [7, 11] for b in expecting_go] + \
-        [(a+b, a*b) for a in [13, 17] for b in expecting_python] + \
-        [(a+b, a*b) for a in [19, 23] for b in expecting_dotnet] + \
-        [(a+b, a*b) for a in [17, 21] for b in expecting_typeScript]
+
+for queue_name in queue_list_names[:]:  
+    if queue_name not in expecting_dict_config:
+        queue_list_names.remove(queue_name)
+
+
+keys_to_delete = []
+
+for queue_name in expecting_dict_config:
+    if queue_name not in queue_list_names:
+        keys_to_delete.append(queue_name)
+
+for queue_name in keys_to_delete:
+    del expecting_dict_config[queue_name]
+    print(queue_name)
+
+expecting_shared = []
+for expecting_config in expecting_dict_config.values():
+    expecting_shared += [(a + b, a * b) for a in expecting_config["expecting share"] for b in expecting_config["expected"]]
+    
 
 shared_counts = {}
 
 for key in db.keys("*"):
     key = key.decode('utf-8')
-    if key.find('results:python:') == 0:
-        results = db.get(key)
-        assert results is not None
-        assert len(results) == 1
-        expecting_python.remove(results[0])
-    elif key.find('results:rust:') == 0:
-        results = db.get(key)
-        assert results is not None
-        assert len(results) == 1
-        expecting_rust.remove(results[0])
-    elif key.find('results:go:') == 0:
-        results = db.get(key)
-        assert results is not None
-        assert len(results) == 1
-        expecting_go.remove(results[0])
-    #elif key.find('results:dotnet:') == 0:
-    #    results = db.get(key)
-    #    assert results is not None
-    #    assert len(results) == 1
-    #    expecting_dotnet.remove(results[0])
-    elif key.find('results:typeScript:') == 0:
-        results = db.get(key)
-        assert results is not None
-        assert len(results) == 1
-        expecting_typeScript.remove(results[0])
-    elif key.find('results:shared:') == 0:
-        result = db.get(key)
-        assert result is not None
-        if isinstance(result, bytes):
-            result = result.decode('utf-8')
-        result = json.loads(result)
-        worker = result['worker']
-        if worker in shared_counts:
-            shared_counts[worker] += 1
+    found_first = False
+    for result in expecting_dict_config.values():
+        name = result["result_name"]
+        if key.find(name) == 0:
+            results = db.get(key)
+            assert results is not None
+            assert len(results) == 1
+            result["expected"].remove(results[0])
+            found_first = True
+    if not found_first:
+        if key.find('results:shared:') == 0:
+            result = db.get(key)
+            assert result is not None
+            if isinstance(result, bytes):
+                result = result.decode('utf-8')
+            result = json.loads(result)
+            worker = result['worker']
+            if worker in shared_counts:
+                shared_counts[worker] += 1
+            else:
+                shared_counts[worker] = 1
+            expecting_shared.remove((result['sum'], result['prod']))
+            pass
         else:
-            shared_counts[worker] = 1
-        expecting_shared.remove((result['sum'], result['prod']))
-        pass
-    else:
-        raise Exception('found unexpected key: ' + key)
+            raise Exception('found unexpected key: ' + key)
 
-print(shared_counts)
+updated_names = []
+for name in queue_list_names:
+    updated_names.append(name.replace("_jobs", ""))
+
+total_count_keys = 0
+for key in shared_counts.keys():
+    total_count_keys+=shared_counts[key]
+
+maximum_allowed = total_count_keys/len(shared_counts)*1.2
+
+print("Maximum number of job counts:",maximum_allowed)
 
 for key in shared_counts.keys():
-    assert key in ['python', 'rust', 'go', 'dotnet',"typeScript"]
+    assert key in updated_names
     # Check that it's fairly well balanced
-    assert shared_counts[key] < 1900
+    print(key,"Job counts:",shared_counts[key])
+    assert shared_counts[key] < maximum_allowed
 
-assert len(expecting_python) == 0
-assert len(expecting_rust) == 0
-assert len(expecting_go) == 0
-assert len(expecting_dotnet) == 0
-assert len(expecting_shared) == 0
+

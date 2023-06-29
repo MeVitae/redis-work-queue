@@ -1,46 +1,124 @@
 #!/bin/bash
 
-# Spawn 2 rust workers
-cd rust
-cargo run -- localhost > /tmp/attemp-rust-worker-1.txt  &
-sleep 1.3
-cargo run -- localhost > /tmp/attemp-rust-worker-2.txt  &
-sleep 0.2
+# Default values
+tests=""
+isfirst=false
+host="localhost:6379"
 
-# Spawn 2 go workers
-cd ../go
-GO_BIN="$(mktemp)"
-go build -o "$GO_BIN" 
-"$GO_BIN" localhost:6379 > /tmp/attemp-go-worker-1.txt & 
-sleep 1.8
-"$GO_BIN" localhost:6379 > /tmp/attemp-go-worker-2.txt &
-sleep 0.5
-rm "$GO_BIN"
 
-# Spawn 2 C# DotNet workers
-cd ../dotnet/RedisWorkQueueTests
-dotnet run -c Release localhost > /tmp/attemp-dotnet-worker-1.txt &
-sleep 1.9
-dotnet run -c Release localhost > /tmp/attemp-dotnet-worker-2.txt &
-sleep 0.5
-cd ..
+display_usage() {
+  echo "Usage: $0 [OPTIONS]"
+  echo "Options:"
+  echo "  -t, --tests <categories> Specify test categories (go_jobs, python_jobs, rust_jobs, typeScript_jobs, dotnet_jobs). Example use './run-test.sh --tests "go_jobs,python_jobs"'"
+  echo "  -h, --host <hostname>    Set the host (default: localhost)"
+  echo "  -h, --help               Display this help message"
+}
 
-# Spawn 2 ts workers
-cd ../typescript
-npm run test localhost > /tmp/attemp-node-worker-1.txt &
-sleep 1.9
-npm run test localhost > /tmp/attemp-node-worker-2.txt &
-sleep 0.5
+# Process command-line arguments
+while [[ $# -gt 0 ]]; do
+  key="$1"
 
-# Spawn 2 python workers
-cd ../
-python3 python-tests.py localhost > /tmp/attemp-py3-worker-1.txt &
-sleep 1.45
-python3 python-tests.py localhost > /tmp/attemp-py3-worker-2.txt &
-sleep 0.9
+  case $key in
+    -t|--tests)
+      tests="${2//,/ }"
+      shift
+      shift
+      ;;
+    -h|--host)
+      host="$2"
+      shift
+      shift
+      ;;
+    -h|--help)
+      display_usage
+      exit 0
+      ;;
+    *)
+      echo "Invalid option: $key" >&2
+      display_usage
+      exit 1
+      ;;
+  esac
+done
 
-# Run the script to spawn jobs and check the results
-python3 job-spawner-and-cleaner.py localhost
 
-# Kill everything at the end
-pkill -P $$
+if [[ "$tests" == *"python"* ]]; then
+  if [ "$isfirst" = false ]; then
+    cd ../
+    cd tests
+  fi
+    python3 python-tests.py "$host" > /tmp/attemp-py3-worker-1.txt &
+    sleep 1.45
+    python3 python-tests.py "$host" > /tmp/attemp-py3-worker-2.txt &
+    sleep 0.9
+    isfirst=true
+  echo "Python test category is present"
+fi
+
+if [[ "$tests" == *"rust"* ]]; then
+  if [ "$isfirst" = true ]; then
+    cd rust 
+  else
+    cd ../rust 
+  fi
+  cargo run -- "$host" > /tmp/attemp-rust-worker-1.txt  &
+  sleep 1.3
+  cargo run -- "$host" > /tmp/attemp-rust-worker-2.txt  &
+  sleep 0.2
+  isfirst=true
+  echo "Rust test category is present"
+  cd ../
+fi
+
+if [[ "$tests" == *"go"* ]]; then
+  if [ "$isfirst" = true ]; then
+    cd go 
+  else
+    cd ../go 
+  fi
+  GO_BIN="$(mktemp)"
+  go build -o "$GO_BIN" 
+  "$GO_BIN" "$host" > /tmp/attemp-go-worker-1.txt & 
+  sleep 1.8
+  "$GO_BIN" "$host" > /tmp/attemp-go-worker-2.txt &
+  sleep 0.5
+  rm "$GO_BIN"
+  isfirst=true
+  echo "Go test category is present"
+  cd ../
+fi
+
+if [[ "$tests" == *"dotnet"* ]]; then
+  if [ "$isfirst" = true ]; then
+    cd dotnet/RedisWorkQueueTests 
+
+  else
+    cd ../dotnet/RedisWorkQueueTests 
+  fi
+  dotnet run -c Release "$host" > /tmp/attemp-dotnet-worker-1.txt &
+  sleep 1.9
+  dotnet run -c Release "$host" > /tmp/attemp-dotnet-worker-2.txt &
+  sleep 0.5
+  cd ../..
+  isfirst=true
+  echo "Dotnet test category is present"
+fi
+
+if [[ "$tests" == *"typeScript"* ]]; then
+
+  if [ "$isfirst" = true ]; then
+    cd typescript 
+  else
+    cd ../typescript 
+  fi
+  npm run test "$host" > /tmp/attemp-node-worker-1.txt &
+  sleep 1.9
+  npm run test "$host" > /tmp/attemp-node-worker-2.txt &
+  sleep 0.5
+  cd ..
+  isfirst=true
+  echo "TypeScript test category is present"
+fi
+
+
+python3 job-spawner-and-cleaner.py "$host" "$tests"
