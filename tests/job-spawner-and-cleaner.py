@@ -60,13 +60,11 @@ while doom_counter < 20:
         print("Cleaning")
         for queue in queue_list:
             queue.light_clean(db)
+
     # The `doom_counter` counts the number of consecutive times all the lengths are 0.
-    queue_verification = True
-    for queue in queue_list:
-         if not queue.queue_len(db) == 0 or not queue.processing(db) == 0:
-            queue_verification = False
-            break
-    if queue_verification:
+    if all(map(
+        lambda queue: queue.queue_len(db) == 0 and queue.processing(db) == 0, queue_list,
+    )):
         doom_counter += 1
     else:
         doom_counter = 0
