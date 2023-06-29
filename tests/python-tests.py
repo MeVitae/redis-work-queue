@@ -9,7 +9,13 @@ from redis_work_queue import KeyPrefix, Item, WorkQueue
 
 if len(sys.argv) < 2:
     raise Exception("first command line argument must be redis host")
-db = redis.Redis(host=sys.argv[1].replace(":6379",""))
+    
+host = sys.argv[1].split(":")
+
+if len(host) == 2:
+    db = redis.Redis(host=host[0], port=host[1])
+else:
+    db = redis.Redis(host=host[0])
 
 python_results_key = KeyPrefix("results:python:")
 shared_results_key = KeyPrefix("results:shared:")

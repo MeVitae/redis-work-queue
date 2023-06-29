@@ -13,13 +13,18 @@ print(queue_list)
 
 if len(sys.argv) < 2:
     raise Exception("first command line argument must be redis host")
-db = redis.Redis(host=sys.argv[1].replace(":6379",""))
+
+host = sys.argv[1].split(":")
+
+if len(host) == 2:
+    db = redis.Redis(host=host[0], port=host[1])
+else:
+    db = redis.Redis(host=host[0])
 
 if len(db.keys("*")) > 0:
     raise Exception("redis database isn't clean")
 
-
-queue_list.append("shared_jobs")
+shared_jobs = WorkQueue(KeyPrefix("shared_jobs"))
 queue_list_names = []
 
 for index in range(len(queue_list)):
@@ -34,26 +39,29 @@ revived = False
 while doom_counter < 20:
     if counter < 256:
         # Spawn 256 initial jobs in each queue
-        for queue in range(len(queue_list)-1):
+        for queue in range(len(queue_list)):
             queue_list[queue].add_item(db, Item(bytes([counter])))
     elif counter % 2 == 0:
         # Every other tick just log how much work is left
         for queue in queue_list:
             print((queue.queue_len(db), queue.processing(db)))
+        
+        print(shared_jobs.queue_len(db),shared_jobs.processing(db))
+
         sleep(0.5)
     elif counter == 501:
         # After a little bit, add more jobs.
         print("More jobs!!")
         for n in range(0, 256):
             n = n % 256
-            for queue in range(len(queue_list)-1):
+            for queue in range(len(queue_list)):
                 queue_list[queue].add_item(db, Item(bytes([n])))
     elif doom_counter > 10 and not revived:
         # After everything settles down, add more jobs
         print("Even more jobs!!")
         revived = True
         for n in range(0, 256):
-            for queue in range(len(queue_list)-1):
+            for queue in range(len(queue_list)):
                 queue_list[queue].add_item(db, Item(bytes([n])))
     else:
         # Otherwise, clean!
@@ -61,39 +69,40 @@ while doom_counter < 20:
         for queue in queue_list:
             queue.light_clean(db)
 
+        shared_jobs.light_clean(db)
     # The `doom_counter` counts the number of consecutive times all the lengths are 0.
     doom_counter = doom_counter + 1 if all(map(
         lambda queue: queue.queue_len(db) == 0 and queue.processing(db) == 0, queue_list,
-    )) else 0
+    )) and shared_jobs.processing(db) == 0 and shared_jobs.queue_len(db) == 0  else 0
     counter += 1
 
 # These are the results are still expecting, when a result is found, it's removed from these lists.
 expecting_dict_config={
-"python_jobs": {
-    "expecting share":[13,17],
-    "expected": [(n * 3)%256 for n in range(0, 256*3)],
-     "result_name":"results:python:"
-},
-"rust_jobs": {
-    "expecting share":[3,5],
-    "expected": [(n * 7)%256 for n in range(0, 256*3)],
-     "result_name":"results:rust:"
-},
-"go_jobs": {
-    "expecting share":[7,11],
-    "expected":[(n * 5)%256 for n in range(0, 256*3)],
-     "result_name":"results:go:"
-},
-"typeScript_jobs": {
-    "expecting share":[17,21],
-    "expected":[(n * 17)%256 for n in range(0, 256*3)],
-    "result_name":"results:typeScript:"
-},
-"dotnet_jobs": {
-    "expecting share":[17,21],
-    "expected":[(n * 11)%256 for n in range(0, 256*3)],
-    "result_name":"results:dotnet:"
-}
+    "python_jobs": {
+        "expecting share":[13,17],
+        "expected": [(n * 3)%256 for n in range(0, 256*3)],
+        "result_name":"results:python:"
+    },
+    "rust_jobs": {
+        "expecting share":[3,5],
+        "expected": [(n * 7)%256 for n in range(0, 256*3)],
+        "result_name":"results:rust:"
+    },
+    "go_jobs": {
+        "expecting share":[7,11],
+        "expected":[(n * 5)%256 for n in range(0, 256*3)],
+        "result_name":"results:go:"
+    },
+    "typeScript_jobs": {
+        "expecting share":[17,21],
+        "expected":[(n * 17)%256 for n in range(0, 256*3)],
+        "result_name":"results:typeScript:"
+    },
+    "dotnet_jobs": {
+        "expecting share":[17,21],
+        "expected":[(n * 11)%256 for n in range(0, 256*3)],
+        "result_name":"results:dotnet:"
+    }
 }
 
 
