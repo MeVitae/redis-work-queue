@@ -280,12 +280,29 @@ impl WorkQueue {
     /// Add an item to the work queue.
     ///
     /// This creates a pipeline and executes it on the database.
-    pub async fn add_item<C: AsyncCommands>(&self, db: &mut C, item: &Item) -> RedisResult<()> {
-        let mut pipeline = Box::new(redis::pipe());
-        self.add_item_to_pipeline(&mut pipeline, item);
-        pipeline.query_async(db).await
+    pub async fn add_item<C: AsyncCommands>(
+        self,
+        db: &mut C,
+        item: &Item,
+    ) -> redis::RedisResult<()> {
+        let main_queue_key = self.main_queue_key.clone();
+        let processing_key = self.processing_key.clone();
+        let item_id = &item.id;
+    
+        let mut newpipeline = redis::pipe();
+        newpipeline.lrange(&main_queue_key, 0, -1);
+        newpipeline.lrange(&processing_key, 0, -1);
+        let (main_items, processing_items): (Vec<String>, Vec<String>) =
+            newpipeline.query_async(db).await?;
+    
+        if !(main_items.contains(&item_id) || processing_items.contains(&item_id)) {
+            let mut pipeline = redis::pipe();
+            self.add_item_to_pipeline(&mut pipeline, item);
+            return pipeline.query_async(db).await;
+        }
+    
+        Ok(())
     }
-
     /// Return the length of the work queue (not including items being processed, see
     /// [`WorkQueue::processing`]).
     pub fn queue_len<'a, C: AsyncCommands>(
@@ -301,6 +318,21 @@ impl WorkQueue {
         db: &'a mut C,
     ) -> impl Future<Output = RedisResult<usize>> + 'a {
         db.llen(&self.processing_key)
+    }
+
+    pub async fn get_queue_lengths<'a, C: AsyncCommands>(
+        &'a self,
+        db: &mut C,
+    ) -> RedisResult<Vec<i64>> {
+        let mut pipeline = redis::pipe();
+        pipeline.llen(&self.main_queue_key);
+        pipeline.llen(&self.processing_key);
+        let result: Vec<i64> = pipeline.query_async(db).await?;
+    
+        let queue_length = result.get(0).cloned().unwrap_or(0);
+        let processing_length = result.get(1).cloned().unwrap_or(0);
+    
+        Ok(vec![queue_length, processing_length])
     }
 
     /// Request a work lease the work queue. This should be called by a worker to get work to

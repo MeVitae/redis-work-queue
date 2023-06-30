@@ -7,7 +7,6 @@ import Redis, {Pipeline} from 'ioredis';
 import {KeyPrefix} from './KeyPrefix';
 import {Item} from './Item';
 const {v4: uuidv4} = require('uuid');
-
 export {KeyPrefix, Item};
 
 /**
@@ -40,7 +39,7 @@ export class WorkQueue {
    * @param {Pipeline} pipeline The pipeline that the data will be executed.
    * @param {Item} item The Item which will be set in the Redis with the key of this.itemDataKey.of(itemId). .
    */
-  addItemToPipeline(pipeline: Pipeline, item:  Item) {
+  async addItemToPipeline(pipeline: Pipeline, item: Item) {
     const itemId = item.id;
     // NOTE: it's important that the data is added first, otherwise someone before the data is ready.
     pipeline.set(this.itemDataKey.of(itemId), item.data);
@@ -55,7 +54,21 @@ export class WorkQueue {
    * @param {Redis} db The Redis Connection.
    * @param item The item that will be executed using the method addItemToPipeline.
    */
-  async addItem(db: Redis, item: Item): Promise<void> {
+  async addItem(db: Redis, item: Item): Promise<void | null> {
+    const MainItems: Array<string | number> = await db.lrange(
+      this.mainQueueKey,
+      0,
+      -1
+    );
+    const ProcessingItems: Array<string | number> = await db.lrange(
+      this.processingKey,
+      0,
+      -1
+    );
+    if (MainItems.includes(item.id) || ProcessingItems.includes(item.id)) {
+      //console.log("Same Item tryed being added twice.")
+      return null;
+    }
     const pipeline = db.pipeline() as unknown as Pipeline;
     this.addItemToPipeline(pipeline, item);
     await pipeline.exec();
@@ -69,6 +82,23 @@ export class WorkQueue {
    */
   queueLen(db: Redis): Promise<number> {
     return db.llen(this.mainQueueKey);
+  }
+
+  /**
+   * This is used to ge the lenght of the Queues in a atomic way.
+   *
+   * @param {Redis} db The Redis Connection.
+   * @returns {Promise<[number, number]>} Return the length of main queue and processing queue.
+   */
+  async getQueueLengths(db: Redis): Promise<[number, number]> {
+    const multi = db.multi();
+    multi.llen(this.mainQueueKey);
+    multi.llen(this.processingKey);
+
+    const result = (await multi.exec()) as Array<[Error | null, number]>;
+    const queueLength = result[0][1];
+    const processingLength = result[1][1];
+    return [queueLength, processingLength];
   }
 
   /**
@@ -119,7 +149,7 @@ export class WorkQueue {
     leaseSecs: number,
     block = true,
     timeout = 1
-  ): Promise<Item|null> {
+  ): Promise<Item | null> {
     let maybeItemId: string | null = null;
     let itemId;
 

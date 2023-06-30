@@ -34,6 +34,13 @@ class WorkQueue(object):
 
         This creates a pipeline and executes it on the database.
         """
+        main_items = db.lrange(self._main_queue_key, 0, -1)
+        processing_items = db.lrange(self._processing_key, 0, -1)
+        item_id = item.id().encode('utf-8')
+        if item_id in main_items or item_id in processing_items:
+            # Same item tried being added twice.
+            # print("Same Item tried being added twice.")
+            return None
         pipeline = db.pipeline()
         self.add_item_to_pipeline(pipeline, item)
         pipeline.execute()
@@ -46,6 +53,16 @@ class WorkQueue(object):
     def processing(self, db: Redis) -> int:
         """Return the number of items being processed."""
         return db.llen(self._processing_key)
+
+
+    def get_queue_lengths(self, db):
+        """Return the length of the work queue and processing queue"""
+        pipeline = db.pipeline()
+        pipeline.llen(self._main_queue_key)
+        pipeline.llen(self._processing_key)
+        return pipeline.execute()
+
+
 
     def light_clean(self, db: Redis) -> None:
         processing: list[bytes | str] = db.lrange(

@@ -46,6 +46,7 @@ if [[ "$tests" == *"python"* ]]; then
   if [ "$isfirst" = false ]; then
     cd ../
     cd tests
+  
   fi
     python3 python-tests.py "$host" > /tmp/attemp-py3-worker-1.txt &
     sleep 1.45
@@ -56,11 +57,8 @@ if [[ "$tests" == *"python"* ]]; then
 fi
 
 if [[ "$tests" == *"rust"* ]]; then
-  if [ "$isfirst" = true ]; then
     cd rust 
-  else
-    cd ../rust 
-  fi
+
   cargo run -- "$host" > /tmp/attemp-rust-worker-1.txt  &
   sleep 1.3
   cargo run -- "$host" > /tmp/attemp-rust-worker-2.txt  &
@@ -72,20 +70,20 @@ fi
 
 if [[ "$tests" == *"go"* ]]; then
   if [ "$isfirst" = true ]; then
-    cd go 
-  else
     cd ../go 
+  else
+    cd go 
   fi
   GO_BIN="$(mktemp)"
   go build -o "$GO_BIN" 
-  "$GO_BIN" "$host" > /tmp/attemp-go-worker-1.txt & 
+  "$GO_BIN" "$host" & 
   sleep 1.8
   "$GO_BIN" "$host" > /tmp/attemp-go-worker-2.txt &
   sleep 0.5
   rm "$GO_BIN"
   isfirst=true
   echo "Go test category is present"
-  cd ../
+  cd ..
 fi
 
 if [[ "$tests" == *"dotnet"* ]]; then
@@ -93,7 +91,7 @@ if [[ "$tests" == *"dotnet"* ]]; then
     cd dotnet/RedisWorkQueueTests 
 
   else
-    cd ../dotnet/RedisWorkQueueTests 
+    cd dotnet/RedisWorkQueueTests 
   fi
   dotnet run -c Release "$host" > /tmp/attemp-dotnet-worker-1.txt &
   sleep 1.9
@@ -109,11 +107,11 @@ if [[ "$tests" == *"typeScript"* ]]; then
   if [ "$isfirst" = true ]; then
     cd typescript 
   else
-    cd ../typescript 
+    cd typescript 
   fi
-  npm run test "$host" > /tmp/attemp-node-worker-1.txt &
+  npm run test "$host" &
   sleep 1.9
-  npm run test "$host" > /tmp/attemp-node-worker-2.txt &
+  npm run test "$host" > /tmp/attemp-node-worker-2.txt  &
   sleep 0.5
   cd ..
   isfirst=true

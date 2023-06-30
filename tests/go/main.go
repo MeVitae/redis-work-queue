@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"os"
 	"time"
+	"strconv"
+	"math/rand"
 
 	"github.com/redis/go-redis/v9"
 
 	workqueue "github.com/mevitae/redis-work-queue/go"
 )
+
 
 type SharedJobData struct {
 	A int `json:"a"`
@@ -34,6 +37,82 @@ func main() {
 	})
 	ctx := context.Background()
 
+	keyPrefix := workqueue.KeyPrefix("Duplicate-Items-Test")
+	workQueue := workqueue.NewWorkQueue(keyPrefix)
+
+	passed := 0
+	notPassed := 0
+	numberOfTests := 150
+	numberOfRandomPossibleItems := 232
+	items := make([]workqueue.Item, 0)
+
+	for i := 1; i <= numberOfTests; i++ {
+		itemData1 := strconv.Itoa(rand.Intn(numberOfRandomPossibleItems))
+		itemData2 := strconv.Itoa(rand.Intn(numberOfRandomPossibleItems))
+		item1 := workqueue.Item{
+			Data: []byte(itemData1),
+			ID:   itemData1,
+		}
+		item2 := workqueue.Item{
+			Data: []byte(itemData2),
+			ID:   itemData2,
+		}
+		items = append(items, item1, item2)
+
+		result1 := workQueue.AddItem(ctx, db, item1)
+		result2 := workQueue.AddItem(ctx, db, item2)
+
+		if result1 == nil {
+			passed++
+		} else {
+			notPassed++
+		}
+
+		if result2 == nil {
+			passed++
+		} else {
+			notPassed++
+		}
+
+		if rand.Intn(10) < 3 {
+			workQueue.Lease(ctx, db, true, time.Second*4, time.Second*1)
+		}
+
+		if rand.Intn(10) < 5 {
+			toRemove := &items[len(items)-1]
+			items = items[:len(items)-1]
+			workQueue.Complete(ctx, db, toRemove)
+		}
+	}
+
+	expectedTotal := numberOfTests * 2
+	if notPassed+passed != expectedTotal {
+		panic(fmt.Sprintf("The number of passed items (%d) with the number of not passed items (%d) should be equal to the number of tests * 2: %d", passed, notPassed, expectedTotal))
+	}
+
+	mainQueueKey := keyPrefix.Of(":queue")
+	processingKey := keyPrefix.Of(":processing")
+	mainItems := db.LRange(ctx, mainQueueKey, 0, -1).Val()
+	processingItems := db.LRange(ctx, processingKey, 0, -1).Val()
+
+	for _, item := range mainItems {
+		if sliceContainsString(processingItems, item) {
+			panic("Found duplicated item from processing queue inside main queue")
+		}
+	}
+	for _, item := range processingItems {
+		if sliceContainsString(mainItems, item) {
+			panic("Found duplicated item from processing queue inside main queue")
+		}
+	}
+
+
+
+
+
+
+
+
 	goResultsKey := workqueue.KeyPrefix("results:go:")
 	sharedResultsKey := workqueue.KeyPrefix("results:shared:")
 
@@ -46,6 +125,8 @@ func main() {
 	shared := false
 	for {
 		shared = !shared
+		fmt.Println(goQueue.GetQueueLengths(ctx,db))
+		fmt.Println(sharedQueue.GetQueueLengths(ctx,db))
 		if shared {
 			sharedJobCounter++
 
@@ -175,4 +256,13 @@ func main() {
 			}
 		}
 	}
+}
+
+func sliceContainsString(slice []string, target string) bool {
+	for _, s := range slice {
+		if s == target {
+			return true
+		}
+	}
+	return false
 }

@@ -1,6 +1,7 @@
 import sys
 import json
 from time import sleep
+import random
 
 import redis
 
@@ -11,14 +12,76 @@ if len(sys.argv) < 2:
     raise Exception("first command line argument must be redis host")
 db = redis.Redis(host=sys.argv[1].replace(":6379",""))
 
+print("Starter running python duplicated items test.")
+
+key_prefix = KeyPrefix('Duplicate-Items-Test')
+work_queue = WorkQueue(key_prefix)
+passed = 0
+not_passed = 0
+number_of_tests = 150
+number_of_random_possible_items = 232
+items = []
+
+for i in range(1, number_of_tests + 1):
+    item_data1 = str(
+        random.randint(0, number_of_random_possible_items - 1)
+    )
+    item_data2 = str(
+        random.randint(0, number_of_random_possible_items - 1)
+    )
+    item1 = Item(bytes(item_data1, 'utf-8'), item_data1)
+    item2 = Item(bytes(item_data2, 'utf-8'), item_data2)
+    items.append(item1)
+    items.append(item2)
+
+    result1 = work_queue.add_item(db, item1)
+    result2 = work_queue.add_item(db, item2)
+
+    if result1 is None:
+        passed += 1
+    else:
+        not_passed += 1
+
+    if result2 is None:
+        passed += 1
+    else:
+        not_passed += 1
+
+    if random.randint(0, 10) < 3:
+        work_queue.lease(db, 1, False, 4)
+
+    if random.randint(0, 10) < 5:
+        to_remove = items.pop()
+        work_queue.complete(db, to_remove)
+
+assert (
+    not_passed + passed == number_of_tests * 2
+), f"The number of passed items ({passed}) with the number of not passed items ({not_passed}) should be equal to number of tests * 2: {number_of_tests * 2}"
+
+main_queue_key = key_prefix.of(':queue')
+processing_key = key_prefix.of(':processing')
+main_items = db.lrange(main_queue_key, 0, -1)
+processing_items = db.lrange(processing_key, 0, -1)
+for item in main_items:
+    if item in processing_items:
+        print(item)
+        raise ValueError("Found duplicated item from main queue inside processing queue")
+
+for item in processing_items:
+    if item in main_items:
+        raise ValueError("Found duplicated item from processing queue inside main queue")
+
+
+print("Python duplicated items test finished succesfully.")
+
 python_results_key = KeyPrefix("results:python:")
 shared_results_key = KeyPrefix("results:shared:")
 
 python_queue = WorkQueue(KeyPrefix("python_jobs"))
 shared_queue = WorkQueue(KeyPrefix("shared_jobs"))
-
 python_job_counter = 0
 shared_job_counter = 0
+Duplicate_test_finish = False
 
 shared = False
 while True:

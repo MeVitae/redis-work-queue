@@ -2,7 +2,7 @@ import Redis from 'ioredis';
 import { Item } from '../../typescript/src/Item';
 import { KeyPrefix } from '../../typescript/src/KeyPrefix';
 import { WorkQueue } from '../../typescript/src/WorkQueue';
-
+console.log("start")
 const redisHost: string = process.argv[2];
 const db: Redis = new Redis(redisHost);
 const typeScriptResultsKey: KeyPrefix = new KeyPrefix('results:typeScript:');
@@ -110,7 +110,85 @@ async function main() {
 }
 
 function sleep(milliseconds: number): Promise<void> {
+  
   return new Promise<void>(resolve => setTimeout(resolve, milliseconds));
 }
 
-main();
+async function testDuplicateItems() {
+  const keyPrefix = new KeyPrefix('Duplicate-Items-Test');
+  const workQueue = new WorkQueue(keyPrefix);
+  let passed = 0;
+  let notPassed = 0;
+  const numberOfTests = 3500;
+  const numberOfRandomPossibleItems = 232;
+  const items: Item[] = [];
+
+  for (let i = 1; i <= numberOfTests; i++) {
+    const itemData1 = Math.floor(
+      Math.random() * numberOfRandomPossibleItems
+    ).toString();
+    const itemData2 = Math.floor(
+      Math.random() * numberOfRandomPossibleItems
+    ).toString();
+    const item1 = await new Item(Buffer.from(itemData1), itemData1);
+    const item2 = await new Item(Buffer.from(itemData2), itemData2);
+    items.push(item1);
+    items.push(item2);
+
+    const result1 = await workQueue.addItem(db, item1);
+    const result2 = await workQueue.addItem(db, item2);
+
+    if (result1 === undefined) {
+      passed += 1;
+    } else {
+      notPassed += 1;
+    }
+
+    if (result2 === undefined) {
+      passed += 1;
+    } else {
+      notPassed += 1;
+    }
+
+    if (Math.floor(Math.random() * 11) < 3) {
+      await workQueue.lease(db, 1, false, 4);
+    }
+
+    if (Math.floor(Math.random() * 11) < 5) {
+      const toRemove: Item = items.pop() as Item;
+      await workQueue.complete(db, toRemove);
+    }
+    //console.log(await workQueue.getQueueLengths(redis))
+  }
+
+  console.assert(
+    notPassed + passed === numberOfTests * 2,
+    'The number of passed items (',
+    passed,
+    ') with the number of not passed items (',
+    notPassed,
+    ') should be equal to number of tests * 2:',
+    numberOfTests * 2
+  );
+
+  const mainQueueKey = keyPrefix.of(':queue');
+  const processingKey = keyPrefix.of(':processing');
+  const mainItems = await db.lrange(mainQueueKey, 0, -1);
+  const processingItems = await db.lrange(processingKey, 0, -1);
+
+  for (let i = 0; i < mainItems.length; i++) {
+    console.assert(
+      !processingItems.includes(mainItems[i]),
+      'Found duplicated item from main queue inside processing queue'
+    );
+  }
+
+  for (let i = 0; i < processingItems.length; i++) {
+    console.assert(
+      !mainItems.includes(processingItems[i]),
+      'Found duplicated item from processing queue inside main queue'
+    );
+  }
+}
+
+testDuplicateItems();
