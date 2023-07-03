@@ -70,7 +70,7 @@ async function main() {
         //Generate result
         const data: any = job.data;
         const result = (data[0] * 17) % 256;
-        
+
         /*
         * Pretend it takes us a while to compute the result
         * Sometimes this will take too long and we'll timeout
@@ -93,7 +93,7 @@ async function main() {
                 })
               )
             );
-            
+
             await sharedQueue.addItem(
               db,
               new Item(

@@ -4,32 +4,24 @@ from time import sleep
 
 import redis
 
-
 sys.path.append('../python')
 from redis_work_queue import KeyPrefix, Item, WorkQueue
-
-queue_list_names = sys.argv[2].split(" ")
 
 
 if len(sys.argv) < 2:
     raise Exception("first command line argument must be redis host")
-
 host = sys.argv[1].split(":")
-
+queue_list_names = sys.argv[2].split(" ")
 
 db = redis.Redis(host=host[0], port=int(host[1]) if len(host)>1 else 6379)
-
 if len(db.keys("*")) > 0:
     raise Exception("redis database isn't clean")
 
 shared_jobs = WorkQueue(KeyPrefix("shared_jobs"))
-queue_list = []
-
 queue_list = list(map(
     lambda name: WorkQueue(KeyPrefix(name)),
     queue_list_names,
 ))
-
 
 counter = 0
 doom_counter = 0
@@ -44,7 +36,7 @@ while doom_counter < 20:
         # Every other tick just log how much work is left
         for queue in queue_list:
             print(queue.get_queue_lengths(db))
-        
+
         print(shared_jobs.get_queue_lengths(db))
 
         sleep(0.5)
@@ -122,7 +114,7 @@ for queue_name in keys_to_delete:
 expecting_shared = []
 for expecting_config in expecting_dict_config.values():
     expecting_shared += [(a + b, a * b) for a in expecting_config["expecting share"] for b in expecting_config["expected"]]
-    
+
 
 shared_counts = {}
 
@@ -171,5 +163,4 @@ for key in shared_counts.keys():
     # Check that it's fairly well balanced
     print(key,"Job counts:",shared_counts[key])
     assert shared_counts[key] < maximum_allowed
-
 

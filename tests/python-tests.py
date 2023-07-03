@@ -7,12 +7,12 @@ import redis
 sys.path.append('../python')
 from redis_work_queue import KeyPrefix, Item, WorkQueue
 
+
 if len(sys.argv) < 2:
     raise Exception("first command line argument must be redis host")
-    
-host = sys.argv[1].split(":")
 
-db = redis.Redis(host=host[0], port=int(host[1]) if len(host)>1 else 6379)
+host = sys.argv[1].split(":")
+db = redis.Redis(host=host[0], port=int(host[1]) if len(host) > 1 else 6379)
 
 python_results_key = KeyPrefix("results:python:")
 shared_results_key = KeyPrefix("results:shared:")
@@ -107,3 +107,4 @@ while True:
                 }))
         else:
             print("Dropping")
+
