@@ -8,28 +8,25 @@ import redis
 sys.path.append('../python')
 from redis_work_queue import KeyPrefix, Item, WorkQueue
 
-queue_list = sys.argv[2].split(" ")
-print(queue_list)
+queue_list_names = sys.argv[2].split(" ")
+
 
 if len(sys.argv) < 2:
     raise Exception("first command line argument must be redis host")
 
 host = sys.argv[1].split(":")
 
-if len(host) == 2:
-    db = redis.Redis(host=host[0], port=host[1])
-else:
-    db = redis.Redis(host=host[0])
+
+db = redis.Redis(host=host[0], port=int(host[1]) or 6379)
 
 if len(db.keys("*")) > 0:
     raise Exception("redis database isn't clean")
 
 shared_jobs = WorkQueue(KeyPrefix("shared_jobs"))
-queue_list_names = []
+queue_list = []
 
-for index in range(len(queue_list)):
-    queue_list_names.append(queue_list[index])
-    queue_list[index]=WorkQueue(KeyPrefix(queue_list[index]))
+for name in queue_list_names:
+    queue_list.append(WorkQueue(KeyPrefix(name)))
 
 
 counter = 0
@@ -39,14 +36,14 @@ revived = False
 while doom_counter < 20:
     if counter < 256:
         # Spawn 256 initial jobs in each queue
-        for queue in range(len(queue_list)):
-            queue_list[queue].add_item(db, Item(bytes([counter])))
+        for queue in queue_list:
+            queue.add_item(db, Item(bytes([counter])))
     elif counter % 2 == 0:
         # Every other tick just log how much work is left
         for queue in queue_list:
-            print((queue.queue_len(db), queue.processing(db)))
+            print(queue.get_queue_lengths(db))
         
-        print(shared_jobs.queue_len(db),shared_jobs.processing(db))
+        print(shared_jobs.get_queue_lengths(db))
 
         sleep(0.5)
     elif counter == 501:
@@ -54,15 +51,15 @@ while doom_counter < 20:
         print("More jobs!!")
         for n in range(0, 256):
             n = n % 256
-            for queue in range(len(queue_list)):
-                queue_list[queue].add_item(db, Item(bytes([n])))
+            for queue in queue_list:
+                queue.add_item(db, Item(bytes([n])))
     elif doom_counter > 10 and not revived:
         # After everything settles down, add more jobs
         print("Even more jobs!!")
         revived = True
         for n in range(0, 256):
-            for queue in range(len(queue_list)):
-                queue_list[queue].add_item(db, Item(bytes([n])))
+            for queue in queue_list:
+                queue.add_item(db, Item(bytes([n])))
     else:
         # Otherwise, clean!
         print("Cleaning")
@@ -72,8 +69,8 @@ while doom_counter < 20:
         shared_jobs.light_clean(db)
     # The `doom_counter` counts the number of consecutive times all the lengths are 0.
     doom_counter = doom_counter + 1 if all(map(
-        lambda queue: queue.queue_len(db) == 0 and queue.processing(db) == 0, queue_list,
-    )) and shared_jobs.processing(db) == 0 and shared_jobs.queue_len(db) == 0  else 0
+        lambda queue: queue.queue_len(db) == 0 and queue.processing(db) == 0, queue_list + [shared_jobs],
+    )) else 0
     counter += 1
 
 # These are the results are still expecting, when a result is found, it's removed from these lists.
@@ -119,7 +116,6 @@ for queue_name in expecting_dict_config:
 
 for queue_name in keys_to_delete:
     del expecting_dict_config[queue_name]
-    print(queue_name)
 
 expecting_shared = []
 for expecting_config in expecting_dict_config.values():
