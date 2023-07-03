@@ -17,7 +17,7 @@ if len(sys.argv) < 2:
 host = sys.argv[1].split(":")
 
 
-db = redis.Redis(host=host[0], port=int(host[1]) or 6379)
+db = redis.Redis(host=host[0], port=int(host[1]) if len(host)>1 else 6379)
 
 if len(db.keys("*")) > 0:
     raise Exception("redis database isn't clean")
@@ -25,8 +25,10 @@ if len(db.keys("*")) > 0:
 shared_jobs = WorkQueue(KeyPrefix("shared_jobs"))
 queue_list = []
 
-for name in queue_list_names:
-    queue_list.append(WorkQueue(KeyPrefix(name)))
+queue_list = list(map(
+    lambda name: WorkQueue(KeyPrefix(name)),
+    queue_list_names,
+))
 
 
 counter = 0
