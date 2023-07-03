@@ -580,3 +580,8 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+*.rdb
+typescript/docs/
+.DS_Store
+./.DS_Store
+**/.DS_Store
