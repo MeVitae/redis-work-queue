@@ -12,10 +12,7 @@ if len(sys.argv) < 2:
     
 host = sys.argv[1].split(":")
 
-if len(host) == 2:
-    db = redis.Redis(host=host[0], port=host[1])
-else:
-    db = redis.Redis(host=host[0])
+db = redis.Redis(host=host[0], port=int(host[1]) if len(host)>1 else 6379)
 
 python_results_key = KeyPrefix("results:python:")
 shared_results_key = KeyPrefix("results:shared:")
