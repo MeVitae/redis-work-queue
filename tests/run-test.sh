@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # Default values
 tests=""
@@ -54,8 +55,10 @@ if [[ "$tests" == *"python"* ]]; then
 fi
 
 if [[ "$tests" == *"rust"* ]]; then
-    echo "Starting rust workers..."
     cd rust
+    echo "Building rust workers..."
+    cargo build
+    echo "Starting rust workers..."
     cargo run -- "$host" > /tmp/redis-work-queue-test-logs/rust-worker-1.txt  &
     sleep 1.3
     cargo run -- "$host" > /tmp/redis-work-queue-test-logs/rust-worker-2.txt  &
@@ -78,7 +81,9 @@ if [[ "$tests" == *"go"* ]]; then
 fi
 
 if [[ "$tests" == *"dotnet"* ]]; then
-    cd dotnet/RedisWorkQueueTest
+    cd dotnet/RedisWorkQueueTests
+    echo "Building DotNet workers..."
+    dotnet build -c Release
     echo "Running DotNet workers..."
     dotnet run -c Release "$host" > /tmp/redis-work-queue-test-logs/dotnet-worker-1.txt &
     sleep 1.9
@@ -89,6 +94,8 @@ fi
 
 if [[ "$tests" == *"typeScript"* ]]; then
     cd typescript
+    echo "Installing Node.js dependencies"
+    npm install
     echo "Running Node.js workers..."
     npm run test "$host" > /tmp/redis-work-queue-test-logs/node-worker-1.txt &
     sleep 1.9

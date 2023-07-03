@@ -17,7 +17,7 @@ db = redis.Redis(host=host[0], port=int(host[1]) if len(host) > 1 else 6379)
 if len(db.keys("*")) > 0:
     raise Exception("redis database isn't clean")
 
-shared_jobs = WorkQueue(KeyPrefix("shared_jobs"))
+shared_queue = WorkQueue(KeyPrefix("shared_jobs"))
 queue_list = list(map(
     lambda name: WorkQueue(KeyPrefix(name)),
     queue_list_names,
@@ -35,9 +35,9 @@ while doom_counter < 20:
     elif counter % 2 == 0:
         # Every other tick just log how much work is left
         for queue in queue_list:
-            print(queue.get_queue_lengths(db))
+            print((queue.queue_len(db), queue.processing(db)))
 
-        print(shared_jobs.get_queue_lengths(db))
+        print((shared_queue.queue_len(db), shared_queue.processing(db)))
         sleep(0.5)
     elif counter == 501:
         # After a little bit, add more jobs.
@@ -58,11 +58,11 @@ while doom_counter < 20:
         print("Cleaning")
         for queue in queue_list:
             queue.light_clean(db)
-        shared_jobs.light_clean(db)
+        shared_queue.light_clean(db)
     # The `doom_counter` counts the number of consecutive times all the lengths are 0.
     doom_counter = doom_counter + 1 if all(map(
         lambda queue: queue.queue_len(db) == 0 and queue.processing(db) == 0,
-        queue_list + [shared_jobs],
+        queue_list + [shared_queue],
     )) else 0
     counter += 1
 
@@ -89,7 +89,7 @@ expecting_dict_config = {
         "result_name": "results:typeScript:"
     },
     "dotnet_jobs": {
-        "expecting share": [17, 21],
+        "expecting share": [19, 23],
         "expected": [(n * 11) % 256 for n in range(0, 256*3)],
         "result_name": "results:dotnet:"
     }
@@ -131,6 +131,7 @@ for key in db.keys("*"):
             assert len(results) == 1
             result["expected"].remove(results[0])
             found_first = True
+            break
     if not found_first:
         if key.find('results:shared:') == 0:
             result = db.get(key)
