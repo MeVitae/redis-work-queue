@@ -1,38 +1,108 @@
 #!/bin/bash
+set -e
 
-# Spawn 2 rust workers
-cd rust
-cargo run -- localhost &
-sleep 1.3
-cargo run -- localhost &
-sleep 0.2
+# Default values
+tests=""
+host="localhost:6379"
 
-# Spawn 2 go workers
-cd ../go
-GO_BIN="$(mktemp)"
-go build -o "$GO_BIN"
-"$GO_BIN" localhost:6379 &
-sleep 1.8
-"$GO_BIN" localhost:6379 &
-sleep 0.5
-rm "$GO_BIN"
 
-# Spawn 2 C# DotNet workers
-cd ../dotnet/RedisWorkQueueTests
-dotnet run -c Release localhost &
-sleep 1.9
-dotnet run -c Release localhost &
-sleep 0.5
+display_usage() {
+  echo "Usage: $0 [OPTIONS]"
+  echo "Options:"
+  echo "  -t, --tests <categories> Specify test categories (go_jobs, python_jobs, rust_jobs, node_jobs, dotnet_jobs). Example use './run-test.sh --tests "go_jobs,python_jobs"'"
+  echo "  -h, --host <hostname>    Set the host (default: localhost:6379)"
+  echo "  -h, --help               Display this help message"
+}
 
-# Spawn 2 python workers
-cd ../..
-python3 python-tests.py localhost &
-sleep 1.45
-python3 python-tests.py localhost &
-sleep 0.9
 
-# Run the script to spawn jobs and check the results
-python3 job-spawner-and-cleaner.py localhost
+# Process command-line arguments
+while [[ $# -gt 0 ]]; do
+  key="$1"
 
-# Kill everything at the end
-pkill -P $$
+  case $key in
+    -t|--tests)
+      tests="${2//,/ }"
+      shift
+      shift
+      ;;
+    -h|--host)
+      host="$2"
+      shift
+      shift
+      ;;
+    -h|--help)
+      display_usage
+      exit 0
+      ;;
+    *)
+      echo "Invalid option: $key" >&2
+      display_usage
+      exit 1
+      ;;
+  esac
+done
+
+
+mkdir -p /tmp/redis-work-queue-test-logs
+
+
+if [[ "$tests" == *"python"* ]]; then
+    echo "Starting python workers..."
+    python3 python-tests.py "$host" > /tmp/redis-work-queue-test-logs/py3-worker-1.txt &
+    sleep 1.45
+    python3 python-tests.py "$host" > /tmp/redis-work-queue-test-logs/py3-worker-2.txt &
+    sleep 0.9
+fi
+
+if [[ "$tests" == *"rust"* ]]; then
+    cd rust
+    echo "Building rust workers..."
+    cargo build
+    echo "Starting rust workers..."
+    cargo run -- "$host" > /tmp/redis-work-queue-test-logs/rust-worker-1.txt  &
+    sleep 1.3
+    cargo run -- "$host" > /tmp/redis-work-queue-test-logs/rust-worker-2.txt  &
+    sleep 0.2
+    cd ..
+fi
+
+if [[ "$tests" == *"go"* ]]; then
+    cd go
+    GO_BIN="$(mktemp)"
+    echo "Building Go worker to $GO_BIN..."
+    go build -o "$GO_BIN"
+    echo "Starting Go workers..."
+    "$GO_BIN" "$host" > /tmp/redis-work-queue-test-logs/go-worker-1.txt &
+    sleep 1.8
+    "$GO_BIN" "$host" > /tmp/redis-work-queue-test-logs/go-worker-2.txt &
+    sleep 0.5
+    rm "$GO_BIN"
+    cd ..
+fi
+
+if [[ "$tests" == *"dotnet"* ]]; then
+    cd dotnet/RedisWorkQueueTests
+    echo "Building DotNet workers..."
+    dotnet build -c Release
+    echo "Running DotNet workers..."
+    dotnet run -c Release "$host" > /tmp/redis-work-queue-test-logs/dotnet-worker-1.txt &
+    sleep 1.9
+    dotnet run -c Release "$host" > /tmp/redis-work-queue-test-logs/dotnet-worker-2.txt &
+    sleep 0.5
+    cd ../..
+fi
+
+if [[ "$tests" == *"node"* ]]; then
+    cd node
+    echo "Installing Node.js dependencies"
+    npm ci
+    echo "Running Node.js workers..."
+    npm run test "$host" > /tmp/redis-work-queue-test-logs/node-worker-1.txt &
+    sleep 1.9
+    npm run test "$host" > /tmp/redis-work-queue-test-logs/node-worker-2.txt &
+    sleep 0.5
+    cd ..
+fi
+
+echo "Running spawner..."
+python3 job-spawner-and-cleaner.py "$host" "$tests"
