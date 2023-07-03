@@ -3,7 +3,7 @@
  * @description An item is used for work queue. Each item has an ID and associated data.
  */
 
-const {v4: uuidv4} = require('uuid');
+import {v4 as uuidv4} from 'uuid';
 
 type ItemData = {
   [key: string]: Buffer | string;
@@ -23,7 +23,7 @@ export class Item {
    * @param {string} [id] - ID of the Item, if null, a new (random UUID) ID is generated.
    */
   constructor(data: string | Buffer, id?: string) {
-    if (!(data instanceof Buffer)) {
+    if (!Buffer.isBuffer(data)) {
       this.data = Buffer.from(data);
     } else {
       this.data = data;

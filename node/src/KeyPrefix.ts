@@ -48,15 +48,4 @@ export class KeyPrefix {
   concat(name: string): KeyPrefix {
     return new KeyPrefix(this.of(name));
   }
-
-  /**
-   * Creates a new
-   *
-   * @param {KeyPrefix} prefix The already created prefix instance.
-   * @param {string} name The name of the wanted prefix.
-   * @returns {KeyPrefix} This return a new KeyPrefix based on the prefix and Name.
-   */
-  static concat(prefix: KeyPrefix, name: string): KeyPrefix {
-    return new KeyPrefix(prefix.of(name));
-  }
 }

@@ -4,33 +4,24 @@ from time import sleep
 
 import redis
 
-
 sys.path.append('../python')
 from redis_work_queue import KeyPrefix, Item, WorkQueue
 
-queue_list = sys.argv[2].split(" ")
-print(queue_list)
 
 if len(sys.argv) < 2:
     raise Exception("first command line argument must be redis host")
-
 host = sys.argv[1].split(":")
+queue_list_names = sys.argv[2].split(" ")
 
-if len(host) == 2:
-    db = redis.Redis(host=host[0], port=host[1])
-else:
-    db = redis.Redis(host=host[0])
-
+db = redis.Redis(host=host[0], port=int(host[1]) if len(host) > 1 else 6379)
 if len(db.keys("*")) > 0:
     raise Exception("redis database isn't clean")
 
-shared_jobs = WorkQueue(KeyPrefix("shared_jobs"))
-queue_list_names = []
-
-for index in range(len(queue_list)):
-    queue_list_names.append(queue_list[index])
-    queue_list[index]=WorkQueue(KeyPrefix(queue_list[index]))
-
+shared_queue = WorkQueue(KeyPrefix("shared_jobs"))
+queue_list = list(map(
+    lambda name: WorkQueue(KeyPrefix(name)),
+    queue_list_names,
+))
 
 counter = 0
 doom_counter = 0
@@ -39,74 +30,73 @@ revived = False
 while doom_counter < 20:
     if counter < 256:
         # Spawn 256 initial jobs in each queue
-        for queue in range(len(queue_list)):
-            queue_list[queue].add_item(db, Item(bytes([counter])))
+        for queue in queue_list:
+            queue.add_item(db, Item(bytes([counter])))
     elif counter % 2 == 0:
         # Every other tick just log how much work is left
         for queue in queue_list:
             print(queue.get_queue_lengths(db))
-        
-        print(shared_jobs.get_queue_lengths(db))
 
+        print(shared_queue.get_queue_lengths(db))
         sleep(0.5)
     elif counter == 501:
         # After a little bit, add more jobs.
         print("More jobs!!")
         for n in range(0, 256):
             n = n % 256
-            for queue in range(len(queue_list)):
-                queue_list[queue].add_item(db, Item(bytes([n])))
+            for queue in queue_list:
+                queue.add_item(db, Item(bytes([n])))
     elif doom_counter > 10 and not revived:
         # After everything settles down, add more jobs
         print("Even more jobs!!")
         revived = True
         for n in range(0, 256):
-            for queue in range(len(queue_list)):
-                queue_list[queue].add_item(db, Item(bytes([n])))
+            for queue in queue_list:
+                queue.add_item(db, Item(bytes([n])))
     else:
         # Otherwise, clean!
         print("Cleaning")
         for queue in queue_list:
             queue.light_clean(db)
-
-        shared_jobs.light_clean(db)
+        shared_queue.light_clean(db)
     # The `doom_counter` counts the number of consecutive times all the lengths are 0.
     doom_counter = doom_counter + 1 if all(map(
-        lambda queue: queue.queue_len(db) == 0 and queue.processing(db) == 0, queue_list,
-    )) and shared_jobs.processing(db) == 0 and shared_jobs.queue_len(db) == 0  else 0
+        lambda queue: queue.queue_len(db) == 0 and queue.processing(db) == 0,
+        queue_list + [shared_queue],
+    )) else 0
     counter += 1
 
 # These are the results are still expecting, when a result is found, it's removed from these lists.
-expecting_dict_config={
+expecting_dict_config = {
     "python_jobs": {
-        "expecting share":[13,17],
-        "expected": [(n * 3)%256 for n in range(0, 256*3)],
-        "result_name":"results:python:"
+        "expecting share": [13, 17],
+        "expected": [(n * 3) % 256 for n in range(0, 256*3)],
+        "result_name": "results:python:"
     },
     "rust_jobs": {
-        "expecting share":[3,5],
-        "expected": [(n * 7)%256 for n in range(0, 256*3)],
-        "result_name":"results:rust:"
+        "expecting share": [3, 5],
+        "expected": [(n * 7) % 256 for n in range(0, 256*3)],
+        "result_name": "results:rust:"
     },
     "go_jobs": {
-        "expecting share":[7,11],
-        "expected":[(n * 5)%256 for n in range(0, 256*3)],
-        "result_name":"results:go:"
+        "expecting share": [7, 11],
+        "expected": [(n * 5) % 256 for n in range(0, 256*3)],
+        "result_name": "results:go:"
     },
-    "typeScript_jobs": {
-        "expecting share":[17,21],
-        "expected":[(n * 17)%256 for n in range(0, 256*3)],
-        "result_name":"results:typeScript:"
+    "node_jobs": {
+        "expecting share": [17, 21],
+        "expected": [(n * 17) % 256 for n in range(0, 256*3)],
+        "result_name": "results:node:"
     },
     "dotnet_jobs": {
-        "expecting share":[17,21],
-        "expected":[(n * 11)%256 for n in range(0, 256*3)],
-        "result_name":"results:dotnet:"
+        "expecting share": [19, 23],
+        "expected": [(n * 11) % 256 for n in range(0, 256*3)],
+        "result_name": "results:dotnet:"
     }
 }
 
 
-for queue_name in queue_list_names[:]:  
+for queue_name in queue_list_names[:]:
     if queue_name not in expecting_dict_config:
         queue_list_names.remove(queue_name)
 
@@ -122,8 +112,11 @@ for queue_name in keys_to_delete:
 
 expecting_shared = []
 for expecting_config in expecting_dict_config.values():
-    expecting_shared += [(a + b, a * b) for a in expecting_config["expecting share"] for b in expecting_config["expected"]]
-    
+    expecting_shared += [
+        (a + b, a * b) for a in expecting_config["expecting share"]
+                       for b in expecting_config["expected"]
+    ]
+
 
 shared_counts = {}
 
@@ -138,6 +131,7 @@ for key in db.keys("*"):
             assert len(results) == 1
             result["expected"].remove(results[0])
             found_first = True
+            break
     if not found_first:
         if key.find('results:shared:') == 0:
             result = db.get(key)
@@ -161,16 +155,14 @@ for name in queue_list_names:
 
 total_count_keys = 0
 for key in shared_counts.keys():
-    total_count_keys+=shared_counts[key]
+    total_count_keys += shared_counts[key]
 
 maximum_allowed = total_count_keys/len(shared_counts)*1.2
 
-print("Maximum number of job counts:",maximum_allowed)
+print("Maximum number of job counts:", maximum_allowed)
 
 for key in shared_counts.keys():
     assert key in updated_names
     # Check that it's fairly well balanced
-    print(key,"Job counts:",shared_counts[key])
+    print(key, "Job counts:", shared_counts[key])
     assert shared_counts[key] < maximum_allowed
-
-

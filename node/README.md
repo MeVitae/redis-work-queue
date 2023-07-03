@@ -7,7 +7,7 @@ readme](https://github.com/MeVitae/redis-work-queue/blob/main/README.md).
 ## Setup
 
 ```typescript
-import Redis, {Pipeline} from 'ioredis';
+import Redis from 'ioredis';
 const {KeyPrefix, WorkQueue} = require('@mevitae/redis-work-queue');
 
 const db: Redis = new Redis(redisHost);
@@ -46,10 +46,10 @@ console.assert(
   bytesItem.data.equals(jsonItem.data),
   "'bytesItem.data' should be the same as 'jsonItem.data'"
 );
-
 ```
 
 ### Add an item to a work queue
+
 ```typescript
 WorkQueue.addItem(db, item)
 ```
@@ -60,8 +60,8 @@ Please read [the documentation on leasing and completing
 items](https://github.com/MeVitae/redis-work-queue/blob/main/README.md#leasing-an-item).
 
 ```typescript
-const Redis, { Pipeline } = require('ioredis');
-const { KeyPrefix, WorkQueue } = require('@mevitae/redis-work-queue');
+const Redis = require('ioredis');
+const {KeyPrefix, WorkQueue} = require('@mevitae/redis-work-queue');
 
 const db: Redis = new Redis(redisHost);
 const workQueue: WorkQueue = new WorkQueue(new KeyPrefix('Queue-name'));
@@ -74,7 +74,6 @@ while (true) {
   await doTheJob(job);
   workQueue.complete(db, job);
 }
-
 ```
 
 ### Handling errors
@@ -85,29 +84,35 @@ errors](https://github.com/MeVitae/redis-work-queue/blob/main/README.md#handling
 ```typescript
 const {Item, WorkQueue,KeyPrefix} = require('@mevitae/redis-work-queue');
 
-const workQueue: WorkQueue = new WorkQueue(new KeyPrefix("Queue-name"))
+const workQueue: WorkQueue = new WorkQueue(new KeyPrefix("Queue-name"));
 
-while (true){
+while (true) {
   // Wait for a job with no timeout and a lease time of 5 seconds.
-  const job: Item = workQueue.lease(db, 5)
-  try{
-    doSomeWOrk(job)
+  const job: Item = workQueue.lease(db, 5);
+  try {
+    doSomeWOrk(job);
   } catch (err) {
-    if (shouldRetry(err)){
+    if (shouldRetry(err)) {
       // Drop a job that should be retried - it will be returned to the work queue after
       //the (5 second) lease expires.
-      continue
-    }else{
+      continue;
+    } else {
       // Errors that shouldn't cause a retry should mark the job as complete so it isn't
       // tried again.
-      logError(err)
-      workQueue.complete(db, &job)
+      logError(err);
+      workQueue.complete(db, &job);
     }
   }
-    // Mark successful jobs as complete
-    workQueue.complete(db, job)
+  // Mark successful jobs as complete
+  workQueue.complete(db, job);
 }
 ```
+
 ### Creating Docs
 
-Use "npx typedoc --entryPoints ./src/WorkQueue.ts ./src/Item.ts ./src/KeyPrefix.ts" to create docs.
+To generate the documentation, run:
+
+```bash
+npx typedoc --entryPoints ./src/WorkQueue.ts ./src/Item.ts ./src/KeyPrefix.ts
+```
+

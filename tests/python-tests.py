@@ -8,9 +8,12 @@ import redis
 sys.path.append('../python')
 from redis_work_queue import KeyPrefix, Item, WorkQueue
 
+
 if len(sys.argv) < 2:
     raise Exception("first command line argument must be redis host")
-db = redis.Redis(host=sys.argv[1].replace(":6379",""))
+
+host = sys.argv[1].split(":")
+db = redis.Redis(host=host[0], port=int(host[1]) if len(host) > 1 else 6379)
 
 print("Starter running python duplicated items test.")
 
@@ -90,7 +93,7 @@ while True:
         shared_job_counter += 1
 
         # First, try to get a job from the shared job queue
-        block = shared_job_counter%5 == 0
+        block = shared_job_counter % 5 == 0
         print("Leasing shared with block = {}".format(block))
         job = shared_queue.lease(db, 2, timeout=1, block=block)
         # If there was no job, continue.
@@ -128,7 +131,7 @@ while True:
         python_job_counter += 1
 
         # First, try to get a job from the python job queue
-        block = shared_job_counter%6 == 0
+        block = shared_job_counter % 6 == 0
         print("Leasing python with block = {}".format(block))
         job = python_queue.lease(db, 1, timeout=2, block=block)
         # If there was no job, continue.
