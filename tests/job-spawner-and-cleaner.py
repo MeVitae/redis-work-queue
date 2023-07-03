@@ -83,10 +83,10 @@ expecting_dict_config = {
         "expected": [(n * 5) % 256 for n in range(0, 256*3)],
         "result_name": "results:go:"
     },
-    "typeScript_jobs": {
+    "node_jobs": {
         "expecting share": [17, 21],
         "expected": [(n * 17) % 256 for n in range(0, 256*3)],
-        "result_name": "results:typeScript:"
+        "result_name": "results:node:"
     },
     "dotnet_jobs": {
         "expecting share": [19, 23],

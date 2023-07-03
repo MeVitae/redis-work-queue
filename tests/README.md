@@ -15,7 +15,7 @@ echo -e 'save ""\nappendonly no' | redis-server -
 From the `tests` directory, to run the integration tests with all languages, use:
 
 ```bash
-./run-test.sh -t go_jobs,python_jobs,rust_jobs,typeScript_jobs,dotnet_jobs
+./run-test.sh -t go_jobs,python_jobs,rust_jobs,node_jobs,dotnet_jobs
 ```
 
 For a summary of other options, run:

@@ -9,7 +9,7 @@ host="localhost:6379"
 display_usage() {
   echo "Usage: $0 [OPTIONS]"
   echo "Options:"
-  echo "  -t, --tests <categories> Specify test categories (go_jobs, python_jobs, rust_jobs, typeScript_jobs, dotnet_jobs). Example use './run-test.sh --tests "go_jobs,python_jobs"'"
+  echo "  -t, --tests <categories> Specify test categories (go_jobs, python_jobs, rust_jobs, node_jobs, dotnet_jobs). Example use './run-test.sh --tests "go_jobs,python_jobs"'"
   echo "  -h, --host <hostname>    Set the host (default: localhost:6379)"
   echo "  -h, --help               Display this help message"
 }
@@ -92,10 +92,10 @@ if [[ "$tests" == *"dotnet"* ]]; then
     cd ../..
 fi
 
-if [[ "$tests" == *"typeScript"* ]]; then
-    cd typescript
+if [[ "$tests" == *"node"* ]]; then
+    cd node
     echo "Installing Node.js dependencies"
-    npm install
+    npm ci
     echo "Running Node.js workers..."
     npm run test "$host" > /tmp/redis-work-queue-test-logs/node-worker-1.txt &
     sleep 1.9

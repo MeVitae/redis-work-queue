@@ -46,7 +46,6 @@ console.assert(
   bytesItem.data.equals(jsonItem.data),
   "'bytesItem.data' should be the same as 'jsonItem.data'"
 );
-
 ```
 
 ### Add an item to a work queue
@@ -62,7 +61,7 @@ items](https://github.com/MeVitae/redis-work-queue/blob/main/README.md#leasing-a
 
 ```typescript
 const Redis = require('ioredis');
-const { KeyPrefix, WorkQueue } = require('@mevitae/redis-work-queue');
+const {KeyPrefix, WorkQueue} = require('@mevitae/redis-work-queue');
 
 const db: Redis = new Redis(redisHost);
 const workQueue: WorkQueue = new WorkQueue(new KeyPrefix('Queue-name'));
@@ -75,7 +74,6 @@ while (true) {
   await doTheJob(job);
   workQueue.complete(db, job);
 }
-
 ```
 
 ### Handling errors
@@ -86,27 +84,27 @@ errors](https://github.com/MeVitae/redis-work-queue/blob/main/README.md#handling
 ```typescript
 const {Item, WorkQueue,KeyPrefix} = require('@mevitae/redis-work-queue');
 
-const workQueue: WorkQueue = new WorkQueue(new KeyPrefix("Queue-name"))
+const workQueue: WorkQueue = new WorkQueue(new KeyPrefix("Queue-name"));
 
-while (true){
+while (true) {
   // Wait for a job with no timeout and a lease time of 5 seconds.
-  const job: Item = workQueue.lease(db, 5)
-  try{
-    doSomeWOrk(job)
+  const job: Item = workQueue.lease(db, 5);
+  try {
+    doSomeWOrk(job);
   } catch (err) {
-    if (shouldRetry(err)){
+    if (shouldRetry(err)) {
       // Drop a job that should be retried - it will be returned to the work queue after
       //the (5 second) lease expires.
-      continue
-    }else{
+      continue;
+    } else {
       // Errors that shouldn't cause a retry should mark the job as complete so it isn't
       // tried again.
-      logError(err)
-      workQueue.complete(db, &job)
+      logError(err);
+      workQueue.complete(db, &job);
     }
   }
-    // Mark successful jobs as complete
-    workQueue.complete(db, job)
+  // Mark successful jobs as complete
+  workQueue.complete(db, job);
 }
 ```
 
