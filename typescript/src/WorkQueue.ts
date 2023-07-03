@@ -3,10 +3,10 @@
  * @description A work queue backed by a redis database.
  */
 
-import Redis, {Pipeline} from 'ioredis';
-import {KeyPrefix} from './KeyPrefix';
+import Redis, {ChainableCommander} from 'ioredis';
+import {v4 as uuidv4} from 'uuid';
 import {Item} from './Item';
-const {v4: uuidv4} = require('uuid');
+import {KeyPrefix} from './KeyPrefix';
 
 export {KeyPrefix, Item};
 
@@ -29,8 +29,8 @@ export class WorkQueue {
     this.processingKey = name.of(':processing');
     this.cleaningKey = name.of(':cleaning');
     this.session = uuidv4();
-    this.leaseKey = KeyPrefix.concat(name, ':leased_by_session:');
-    this.itemDataKey = KeyPrefix.concat(name, ':item:');
+    this.leaseKey = name.concat(':leased_by_session:');
+    this.itemDataKey = name.concat(':item:');
   }
 
   /**
@@ -38,14 +38,13 @@ export class WorkQueue {
    * Use `WorkQueue.addItem` if you don't want to pass a pipeline directly.
    * Add the item data.
    * @param {Pipeline} pipeline The pipeline that the data will be executed.
-   * @param {Item} item The Item which will be set in the Redis with the key of this.itemDataKey.of(itemId). .
+   * @param {Item} item The Item which will be set in the Redis with the key of this.itemDataKey.of(item.id).
    */
-  addItemToPipeline(pipeline: Pipeline, item: Item) {
-    const itemId = item.id;
+  addItemToPipeline(pipeline: ChainableCommander, item: Item) {
     // NOTE: it's important that the data is added first, otherwise someone before the data is ready.
-    pipeline.set(this.itemDataKey.of(itemId), item.data);
+    pipeline.set(this.itemDataKey.of(item.id), item.data);
     // Then add the id to the work queue
-    pipeline.lpush(this.mainQueueKey, itemId);
+    pipeline.lpush(this.mainQueueKey, item.id);
   }
 
   /**
@@ -56,13 +55,13 @@ export class WorkQueue {
    * @param item The item that will be executed using the method addItemToPipeline.
    */
   async addItem(db: Redis, item: Item): Promise<void> {
-    const pipeline = db.pipeline() as unknown as Pipeline;
+    const pipeline = db.pipeline();
     this.addItemToPipeline(pipeline, item);
     await pipeline.exec();
   }
 
   /**
-   * This is used to get the lenght of the Main Queue.
+   * This is used to get the length of the Main Queue.
    *
    * @param {Redis} db The Redis Connection.
    * @returns {Promise<number>} Return the length of the work queue (not including items being processed, see `WorkQueue.processing()`).

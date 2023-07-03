@@ -7,7 +7,7 @@ readme](https://github.com/MeVitae/redis-work-queue/blob/main/README.md).
 ## Setup
 
 ```typescript
-import Redis, {Pipeline} from 'ioredis';
+import Redis from 'ioredis';
 const {KeyPrefix, WorkQueue} = require('@mevitae/redis-work-queue');
 
 const db: Redis = new Redis(redisHost);
@@ -61,7 +61,7 @@ Please read [the documentation on leasing and completing
 items](https://github.com/MeVitae/redis-work-queue/blob/main/README.md#leasing-an-item).
 
 ```typescript
-const Redis, { Pipeline } = require('ioredis');
+const Redis = require('ioredis');
 const { KeyPrefix, WorkQueue } = require('@mevitae/redis-work-queue');
 
 const db: Redis = new Redis(redisHost);
