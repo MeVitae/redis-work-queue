@@ -10,7 +10,7 @@ display_usage() {
   echo "Usage: $0 [OPTIONS]"
   echo "Options:"
   echo "  -t, --tests <categories> Specify test categories (go_jobs, python_jobs, rust_jobs, typeScript_jobs, dotnet_jobs). Example use './run-test.sh --tests "go_jobs,python_jobs"'"
-  echo "  -h, --host <hostname>    Set the host (default: localhost)"
+  echo "  -h, --host <hostname>    Set the host (default: localhost:6379)"
   echo "  -h, --help               Display this help message"
 }
 
