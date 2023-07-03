@@ -1,7 +1,7 @@
 import Redis from 'ioredis';
-import {Item} from '../../typescript/src/Item';
-import {KeyPrefix} from '../../typescript/src/KeyPrefix';
-import {WorkQueue} from '../../typescript/src/WorkQueue';
+import {Item} from '../../node/src/Item';
+import {KeyPrefix} from '../../node/src/KeyPrefix';
+import {WorkQueue} from '../../node/src/WorkQueue';
 
 const redisHost: string = process.argv[2];
 const db: Redis = new Redis(redisHost);
