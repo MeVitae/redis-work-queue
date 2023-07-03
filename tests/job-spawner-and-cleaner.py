@@ -13,7 +13,7 @@ if len(sys.argv) < 2:
 host = sys.argv[1].split(":")
 queue_list_names = sys.argv[2].split(" ")
 
-db = redis.Redis(host=host[0], port=int(host[1]) if len(host)>1 else 6379)
+db = redis.Redis(host=host[0], port=int(host[1]) if len(host) > 1 else 6379)
 if len(db.keys("*")) > 0:
     raise Exception("redis database isn't clean")
 
@@ -38,7 +38,6 @@ while doom_counter < 20:
             print(queue.get_queue_lengths(db))
 
         print(shared_jobs.get_queue_lengths(db))
-
         sleep(0.5)
     elif counter == 501:
         # After a little bit, add more jobs.
@@ -59,45 +58,45 @@ while doom_counter < 20:
         print("Cleaning")
         for queue in queue_list:
             queue.light_clean(db)
-
         shared_jobs.light_clean(db)
     # The `doom_counter` counts the number of consecutive times all the lengths are 0.
     doom_counter = doom_counter + 1 if all(map(
-        lambda queue: queue.queue_len(db) == 0 and queue.processing(db) == 0, queue_list + [shared_jobs],
+        lambda queue: queue.queue_len(db) == 0 and queue.processing(db) == 0,
+        queue_list + [shared_jobs],
     )) else 0
     counter += 1
 
 # These are the results are still expecting, when a result is found, it's removed from these lists.
-expecting_dict_config={
+expecting_dict_config = {
     "python_jobs": {
-        "expecting share":[13,17],
-        "expected": [(n * 3)%256 for n in range(0, 256*3)],
-        "result_name":"results:python:"
+        "expecting share": [13, 17],
+        "expected": [(n * 3) % 256 for n in range(0, 256*3)],
+        "result_name": "results:python:"
     },
     "rust_jobs": {
-        "expecting share":[3,5],
-        "expected": [(n * 7)%256 for n in range(0, 256*3)],
-        "result_name":"results:rust:"
+        "expecting share": [3, 5],
+        "expected": [(n * 7) % 256 for n in range(0, 256*3)],
+        "result_name": "results:rust:"
     },
     "go_jobs": {
-        "expecting share":[7,11],
-        "expected":[(n * 5)%256 for n in range(0, 256*3)],
-        "result_name":"results:go:"
+        "expecting share": [7, 11],
+        "expected": [(n * 5) % 256 for n in range(0, 256*3)],
+        "result_name": "results:go:"
     },
     "typeScript_jobs": {
-        "expecting share":[17,21],
-        "expected":[(n * 17)%256 for n in range(0, 256*3)],
-        "result_name":"results:typeScript:"
+        "expecting share": [17, 21],
+        "expected": [(n * 17) % 256 for n in range(0, 256*3)],
+        "result_name": "results:typeScript:"
     },
     "dotnet_jobs": {
-        "expecting share":[17,21],
-        "expected":[(n * 11)%256 for n in range(0, 256*3)],
-        "result_name":"results:dotnet:"
+        "expecting share": [17, 21],
+        "expected": [(n * 11) % 256 for n in range(0, 256*3)],
+        "result_name": "results:dotnet:"
     }
 }
 
 
-for queue_name in queue_list_names[:]:  
+for queue_name in queue_list_names[:]:
     if queue_name not in expecting_dict_config:
         queue_list_names.remove(queue_name)
 
@@ -113,7 +112,10 @@ for queue_name in keys_to_delete:
 
 expecting_shared = []
 for expecting_config in expecting_dict_config.values():
-    expecting_shared += [(a + b, a * b) for a in expecting_config["expecting share"] for b in expecting_config["expected"]]
+    expecting_shared += [
+        (a + b, a * b) for a in expecting_config["expecting share"]
+                       for b in expecting_config["expected"]
+    ]
 
 
 shared_counts = {}
@@ -152,15 +154,14 @@ for name in queue_list_names:
 
 total_count_keys = 0
 for key in shared_counts.keys():
-    total_count_keys+=shared_counts[key]
+    total_count_keys += shared_counts[key]
 
 maximum_allowed = total_count_keys/len(shared_counts)*1.2
 
-print("Maximum number of job counts:",maximum_allowed)
+print("Maximum number of job counts:", maximum_allowed)
 
 for key in shared_counts.keys():
     assert key in updated_names
     # Check that it's fairly well balanced
-    print(key,"Job counts:",shared_counts[key])
+    print(key, "Job counts:", shared_counts[key])
     assert shared_counts[key] < maximum_allowed
-

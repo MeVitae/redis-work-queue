@@ -40,7 +40,7 @@ export class WorkQueue {
    * @param {Pipeline} pipeline The pipeline that the data will be executed.
    * @param {Item} item The Item which will be set in the Redis with the key of this.itemDataKey.of(itemId). .
    */
-  addItemToPipeline(pipeline: Pipeline, item:  Item) {
+  addItemToPipeline(pipeline: Pipeline, item: Item) {
     const itemId = item.id;
     // NOTE: it's important that the data is added first, otherwise someone before the data is ready.
     pipeline.set(this.itemDataKey.of(itemId), item.data);
@@ -119,9 +119,8 @@ export class WorkQueue {
     leaseSecs: number,
     block = true,
     timeout = 1
-  ): Promise<Item|null> {
+  ): Promise<Item | null> {
     let maybeItemId: string | null = null;
-    let itemId;
 
     // Try to move an item from the main queue to the processing list.
     if (block) {
@@ -138,7 +137,7 @@ export class WorkQueue {
       return null;
     }
 
-    itemId = maybeItemId;
+    const itemId = maybeItemId;
 
     let data: Buffer | null = await db.getBuffer(this.itemDataKey.of(itemId));
 
@@ -148,8 +147,7 @@ export class WorkQueue {
 
     // Setup the lease item.
     await db.setex(this.leaseKey.of(itemId), leaseSecs, this.session);
-    const item = new Item(data, itemId);
-    return item;
+    return new Item(data, itemId);
   }
 
   /**

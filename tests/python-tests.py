@@ -30,7 +30,7 @@ while True:
         shared_job_counter += 1
 
         # First, try to get a job from the shared job queue
-        block = shared_job_counter%5 == 0
+        block = shared_job_counter % 5 == 0
         print("Leasing shared with block = {}".format(block))
         job = shared_queue.lease(db, 2, timeout=1, block=block)
         # If there was no job, continue.
@@ -68,7 +68,7 @@ while True:
         python_job_counter += 1
 
         # First, try to get a job from the python job queue
-        block = shared_job_counter%6 == 0
+        block = shared_job_counter % 6 == 0
         print("Leasing python with block = {}".format(block))
         job = python_queue.lease(db, 1, timeout=2, block=block)
         # If there was no job, continue.
@@ -107,4 +107,3 @@ while True:
                 }))
         else:
             print("Dropping")
-

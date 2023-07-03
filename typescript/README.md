@@ -50,6 +50,7 @@ console.assert(
 ```
 
 ### Add an item to a work queue
+
 ```typescript
 WorkQueue.addItem(db, item)
 ```
@@ -108,6 +109,12 @@ while (true){
     workQueue.complete(db, job)
 }
 ```
+
 ### Creating Docs
 
-Use "npx typedoc --entryPoints ./src/WorkQueue.ts ./src/Item.ts ./src/KeyPrefix.ts" to create docs.
+To generate the documentation, run:
+
+```bash
+npx typedoc --entryPoints ./src/WorkQueue.ts ./src/Item.ts ./src/KeyPrefix.ts
+```
+
