@@ -123,30 +123,29 @@ func (workQueue *WorkQueue) AddItem(ctx context.Context, db *redis.Client, item 
 }
 
 func (workQueue *WorkQueue) AddAtomicItem(ctx context.Context, db *redis.Client, item Item) error {
-	tx := db.TxPipeline()
+	txf := func(tx *redis.Tx) error {
+		WorkingitemsInQueue, err := tx.LRange(ctx, workQueue.mainQueueKey, 0, -1).Result()
 
-	// Add LRANGE commands to the transaction
-	tx.LRange(ctx, workQueue.mainQueueKey, 0, -1)
-	tx.LRange(ctx, workQueue.processingKey, 0, -1)
+		ProcessingitemsInQueue, err := tx.LRange(ctx, workQueue.processingKey, 0, -1).Result()
 
-	// Execute the transaction
-	results, err := tx.Exec(ctx)
-	if err != nil {
-		return err
-	}
+		itemID := item.ID
 
-	mainItems := results[0].(*redis.StringSliceCmd).Val()
-	processingItems := results[1].(*redis.StringSliceCmd).Val()
-	itemID := item.ID
+		if sliceContainsString(WorkingitemsInQueue, itemID) || sliceContainsString(ProcessingitemsInQueue, itemID) {
+			// Same item tried being added twice.
+			return nil
+		}
 
-	if sliceContainsString(mainItems, itemID) || sliceContainsString(processingItems, itemID) {
-		// Same item tried being added twice.
+		pipe := tx.Pipeline()
+		workQueue.AddItemToPipeline(ctx, pipe, item)
+		_, err = pipe.Exec(ctx)
+		if err != nil {
+			return err
+		}
+
 		return nil
 	}
 
-	pipeline := db.TxPipeline()
-	workQueue.AddItemToPipeline(ctx, pipeline, item)
-	_, err = pipeline.Exec(ctx)
+	err := db.Watch(ctx, txf, workQueue.mainQueueKey, workQueue.processingKey)
 	return err
 }
 
