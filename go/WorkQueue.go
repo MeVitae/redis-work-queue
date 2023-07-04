@@ -122,31 +122,57 @@ func (workQueue *WorkQueue) AddItem(ctx context.Context, db *redis.Client, item 
 	return err
 }
 
+// **************-This method can be used only when database is locked-**************
 func (workQueue *WorkQueue) AddAtomicItem(ctx context.Context, db *redis.Client, item Item) error {
 	txf := func(tx *redis.Tx) error {
-		WorkingitemsInQueue, err := tx.LRange(ctx, workQueue.mainQueueKey, 0, -1).Result()
+		pipe := db.Pipeline()
 
-		ProcessingitemsInQueue, err := tx.LRange(ctx, workQueue.processingKey, 0, -1).Result()
+		mainQueueLenCmd := pipe.LLen(ctx, workQueue.mainQueueKey)
+		processingQueueLenCmd := pipe.LLen(ctx, workQueue.processingKey)
 
-		itemID := item.ID
+		_, err := pipe.Exec(ctx)
 
-		if sliceContainsString(WorkingitemsInQueue, itemID) || sliceContainsString(ProcessingitemsInQueue, itemID) {
-			// Same item tried being added twice.
+		mainQueueLen, err := mainQueueLenCmd.Result()
+
+		processingQueueLen, err := processingQueueLenCmd.Result()
+
+		pipeNew := db.Pipeline()
+		processingItemsInQueue, err := pipeNew.LPos(ctx, workQueue.processingKey, item.ID, redis.LPosArgs{
+			Rank:   1,
+			MaxLen: processingQueueLen,
+		}).Result()
+
+		workingItemsInQueue, err := pipeNew.LPos(ctx, workQueue.mainQueueKey, item.ID, redis.LPosArgs{
+			Rank:   1,
+			MaxLen: mainQueueLen,
+		}).Result()
+
+		pipeNew.Exec(ctx)
+
+		if workingItemsInQueue == 0 || processingItemsInQueue == 0 {
 			return nil
 		}
 
-		pipe := tx.Pipeline()
-		workQueue.AddItemToPipeline(ctx, pipe, item)
-		_, err = pipe.Exec(ctx)
+		pipeEx := tx.Pipeline()
+		workQueue.AddItemToPipeline(ctx, pipeEx, item)
+		_, err = pipeEx.Exec(ctx)
 		if err != nil {
 			return err
 		}
-
 		return nil
 	}
 
 	err := db.Watch(ctx, txf, workQueue.mainQueueKey, workQueue.processingKey)
-	return err
+	//fmt.Println(err)
+	for err == redis.TxFailedErr {
+		if err == nil {
+			// Success.
+			return nil
+		} else if err == redis.TxFailedErr {
+			err = db.Watch(ctx, txf, workQueue.mainQueueKey, workQueue.processingKey)
+		}
+	}
+	return nil
 }
 
 func (workQueue *WorkQueue) GetQueueLengths(ctx context.Context, db *redis.Client) ([]int64, error) {
