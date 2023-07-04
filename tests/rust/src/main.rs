@@ -3,7 +3,7 @@ use std::time::Duration;
 use futures_lite::future;
 use redis::{AsyncCommands, RedisResult};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+
 
 
 use redis_work_queue::{Item, KeyPrefix, WorkQueue};
@@ -28,12 +28,20 @@ fn main() -> RedisResult<()> {
 }
 
 
-async fn run_duplicate_items_test(db: &mut redis::aio::Connection) -> Result<(), redis::RedisError> {
+
+async fn run_duplicate_items_test() -> Result<(), Box<dyn std::error::Error>> {
+    let host = std::env::args()
+        .skip(1)
+        .next()
+        .expect("first command line argument must be redis host");
+    let client = &mut redis::Client::open(format!("redis://{host}/"))?
+        .get_async_connection()
+        .await?;
+
     let key_prefix = KeyPrefix::new("Duplicate-Items-Test".to_string());
 
-    let work_queue1 = WorkQueue::new(key_prefix.clone());
-    let mut passed = 0;
-    let mut not_passed = 0;
+    let work_queue1 = WorkQueue::new(key_prefix.clone());  // Make work_queue1 mutable
+
     let number_of_tests = 150;
     let number_of_random_possible_items = 232;
     let mut items = Vec::new();
@@ -47,31 +55,33 @@ async fn run_duplicate_items_test(db: &mut redis::aio::Connection) -> Result<(),
         items.push(item1.clone());
         items.push(item2.clone());
 
-        work_queue1.add_item(db, &item1).await?;
-        work_queue1.add_item(db, &item2).await?;
+        //work_queue1.add_atomic_item(&mut client, &item1).await?;
+       // work_queue1.add_atomic_item(&mut client, &item2).await?;
+        work_queue1.add_atomic_item(client, &item1).await?;
+        
 
         if rand::thread_rng().gen_range(0..10) < 3 {
-            work_queue1.lease(db, Some(Duration::from_secs(1)), Duration::from_secs(4)).await?;
+            work_queue1.lease(client, Some(Duration::from_secs(1)), Duration::from_secs(4)).await?;
+            
+
         }
 
         if rand::thread_rng().gen_range(0..10) < 5 {
             if let Some(item) = items.pop() {
-                work_queue1.complete(db, &item).await?;
+                if work_queue1.complete(client, &item).await?{
+
+                }
             }
         }
     }
 
     let main_queue_key = key_prefix.of("queue");
-    
     let processing_key = key_prefix.of("processing");
-    let main_items: Vec<String> = db.lrange(&main_queue_key, 0, -1).await?;
-    let processing_items: Vec<String> = db.lrange(&processing_key, 0, -1).await?;
+    let main_items: Vec<String> = client.lrange(&main_queue_key, 0, -1).await?;
+    let processing_items: Vec<String> = client.lrange(&processing_key, 0, -1).await?;
     for item in &main_items {
         if processing_items.contains(item) {
-            return Err(redis::RedisError::from(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Found duplicated item from processing queue inside main queue",
-            )));
+            return Err("Found duplicated item from processing queue inside main queue".into());
         }
     }
 
@@ -89,10 +99,9 @@ async fn async_main() -> RedisResult<()> {
         .await?;
 
 
-        if let Err(err) = run_duplicate_items_test(&mut db).await {
-            println!("Error: {}", err);
-            return;
-        }
+       if let Err(err) = run_duplicate_items_test().await {
+        eprintln!("Error: {:?}", err);
+    }
 
     let rust_results_key = KeyPrefix::new("results:rust:".to_string());
     let shared_results_key = KeyPrefix::new("results:shared:".to_string());
