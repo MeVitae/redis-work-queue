@@ -66,6 +66,7 @@ package workqueue
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	//"fmt"
@@ -137,27 +138,35 @@ func (workQueue *WorkQueue) AddAtomicItem(ctx context.Context, db *redis.Client,
 		processingQueueLen, err := processingQueueLenCmd.Result()
 
 		pipeNew := db.Pipeline()
-		processingItemsInQueue, err := pipeNew.LPos(ctx, workQueue.processingKey, item.ID, redis.LPosArgs{
-			Rank:   1,
+
+		processingItemsInQueueCmd := pipeNew.LPos(ctx, workQueue.processingKey, item.ID, redis.LPosArgs{
+			Rank:   -1,
 			MaxLen: processingQueueLen,
-		}).Result()
+		})
 
-		workingItemsInQueue, err := pipeNew.LPos(ctx, workQueue.mainQueueKey, item.ID, redis.LPosArgs{
-			Rank:   1,
+		workingItemsInQueueCmd := pipeNew.LPos(ctx, workQueue.mainQueueKey, item.ID, redis.LPosArgs{
+			Rank:   -1,
 			MaxLen: mainQueueLen,
-		}).Result()
+		})
 
-		pipeNew.Exec(ctx)
+		_, err = pipeNew.Exec(ctx)
 
-		if workingItemsInQueue == 0 || processingItemsInQueue == 0 {
-			return nil
-		}
+		processingItemsInQueue, err := processingItemsInQueueCmd.Result()
 
-		pipeEx := tx.Pipeline()
-		workQueue.AddItemToPipeline(ctx, pipeEx, item)
-		_, err = pipeEx.Exec(ctx)
-		if err != nil {
-			return err
+		fmt.Println(processingItemsInQueue)
+
+		workingItemsInQueue, err := workingItemsInQueueCmd.Result()
+
+		fmt.Println(workingItemsInQueue, processingItemsInQueue, item.ID)
+
+		if workingItemsInQueue == 0 && processingItemsInQueue == 0 {
+
+			pipeEx := tx.Pipeline()
+			workQueue.AddItemToPipeline(ctx, pipeEx, item)
+			_, err = pipeEx.Exec(ctx)
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	}

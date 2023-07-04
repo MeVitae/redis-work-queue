@@ -4,16 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"time"
-	"strconv"
 	"math/rand"
+	"os"
+	"strconv"
+	"time"
 
-	"github.com/redis/go-redis/v9"
-
+	"github.com/bsm/redislock"
 	workqueue "github.com/mevitae/redis-work-queue/go"
+	"github.com/redis/go-redis/v9"
 )
-
 
 type SharedJobData struct {
 	A int `json:"a"`
@@ -31,23 +30,26 @@ func main() {
 	if len(os.Args) < 2 {
 		panic("first command line argument must be redis host")
 	}
-
+	fmt.Println("-----")
 	db := redis.NewClient(&redis.Options{
 		Addr: os.Args[1],
 	})
+
 	ctx := context.Background()
 
 	keyPrefix := workqueue.KeyPrefix("Duplicate-Items-Test")
 	workQueue := workqueue.NewWorkQueue(keyPrefix)
 
+	fmt.Println("Duplicated jobs test started")
 	passed := 0
 	notPassed := 0
 	numberOfTests := 150
-	numberOfRandomPossibleItems := 232
+	numberOfRandomPossibleItems := 35
 	items := make([]workqueue.Item, 0)
 
 	for i := 1; i <= numberOfTests; i++ {
 		itemData1 := strconv.Itoa(rand.Intn(numberOfRandomPossibleItems))
+		lockDuration := 100 * time.Millisecond
 		itemData2 := strconv.Itoa(rand.Intn(numberOfRandomPossibleItems))
 		item1 := workqueue.Item{
 			Data: []byte(itemData1),
@@ -59,7 +61,37 @@ func main() {
 		}
 		items = append(items, item1, item2)
 
+		lockKey := fmt.Sprintf("lock:%s", item1.ID)
+
+		locker := redislock.New(db)
+
+		// Acquire lock for item.ID
+		lock, _ := locker.Obtain(ctx, lockKey, lockDuration, nil)
+		defer func() {
+			// Release the lock for item.ID
+			err := lock.Release(ctx)
+			if err != nil {
+				fmt.Printf("failed to release lock for item.ID: %v\n", err)
+			}
+		}()
+
+		// Process item.ID
 		result1 := workQueue.AddAtomicItem(ctx, db, item1)
+		waitTime := 100 * time.Millisecond
+		fmt.Printf("Waiting for %v before proceeding to the next operation\n", waitTime)
+		time.Sleep(waitTime)
+		// Acquire lock for item2.ID
+		lockKey2 := fmt.Sprintf("lock:%s", item2.ID)
+		lock2, _ := locker.Obtain(ctx, lockKey2, lockDuration, nil)
+		defer func() {
+			// Release the lock for item2.ID
+			err := lock2.Release(ctx)
+			if err != nil {
+				fmt.Printf("failed to release lock for item2.ID: %v\n", err)
+			}
+		}()
+
+		// Process item2.ID
 		result2 := workQueue.AddAtomicItem(ctx, db, item2)
 
 		if result1 == nil {
@@ -94,24 +126,21 @@ func main() {
 	processingKey := keyPrefix.Of(":processing")
 	mainItems := db.LRange(ctx, mainQueueKey, 0, -1).Val()
 	processingItems := db.LRange(ctx, processingKey, 0, -1).Val()
-
+	fmt.Println(mainItems, "------", processingItems)
 	for _, item := range mainItems {
+
 		if sliceContainsString(processingItems, item) {
+			fmt.Println(processingItems, "---", item)
 			panic("Found duplicated item from processing queue inside main queue")
 		}
 	}
+
 	for _, item := range processingItems {
 		if sliceContainsString(mainItems, item) {
 			panic("Found duplicated item from processing queue inside main queue")
 		}
 	}
-
-
-
-
-
-
-
+	fmt.Println("Replicated items test finished")
 
 	goResultsKey := workqueue.KeyPrefix("results:go:")
 	sharedResultsKey := workqueue.KeyPrefix("results:shared:")
@@ -125,8 +154,8 @@ func main() {
 	shared := false
 	for {
 		shared = !shared
-		fmt.Println(goQueue.GetQueueLengths(ctx,db))
-		fmt.Println(sharedQueue.GetQueueLengths(ctx,db))
+		fmt.Println(goQueue.GetQueueLengths(ctx, db))
+		fmt.Println(sharedQueue.GetQueueLengths(ctx, db))
 		if shared {
 			sharedJobCounter++
 
