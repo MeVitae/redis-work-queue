@@ -150,7 +150,7 @@ func (workQueue *WorkQueue) AddAtomicItem(ctx context.Context, db *redis.Client,
 	return err
 }
 
-func (workQueue *WorkQueue) GetQueueLengthsAtomic(ctx context.Context, db *redis.Client) ([]int64, error) {
+func (workQueue *WorkQueue) GetQueueLengths(ctx context.Context, db *redis.Client) ([]int64, error) {
 	tx := db.TxPipeline()
 
 	queueLen := tx.LLen(ctx, workQueue.mainQueueKey)
@@ -166,21 +166,6 @@ func (workQueue *WorkQueue) GetQueueLengthsAtomic(ctx context.Context, db *redis
 	result[1], _ = processingLen.Result()
 
 	return result, nil
-}
-
-func (workQueue *WorkQueue) GetQueueLengths(ctx context.Context, db *redis.Client) ([]int64, error) {
-	pipe := db.Pipeline()
-	queueLen := pipe.LLen(ctx, workQueue.mainQueueKey)
-	processingLen := pipe.LLen(ctx, workQueue.processingKey)
-	_, err := pipe.Exec(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make([]int64, 2)
-	result[0], _ = queueLen.Result()
-	result[1], _ = processingLen.Result()
-	return result, err
 }
 
 // Return the length of the work queue (not including items being processed, see
