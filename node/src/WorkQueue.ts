@@ -50,31 +50,63 @@ export class WorkQueue {
   /**
    * Add an item to the work queue in a atomic way.
    * This creates a pipeline and executes it on the database if the item id is not already in either the main queue or the procesing queue.
-   *
+   * 
+   * This method can be used only when database is locked
+   * 
    * @param {Redis} db The Redis Connection.
    * @param item The item that will be executed using the method addItemToPipeline.
    */
-  async addAtomicItem(db: Redis, item: Item): Promise<boolean | null> {
-    return new Promise<boolean | null>((resolve, reject) => {
-      db.multi()
-        .lrange(this.mainQueueKey, 0, -1)
-        .lrange(this.processingKey, 0, -1)
-        .exec(async (err, results) => {
-          if (
-            results &&
-            ((results[0][1] as string[]).includes(item.id) ||
-              (results[1][1] as string[]).includes(item.id))
-          ) {
-            resolve(null);
-          } else {
-            const pipeline = db.pipeline();
-            this.addItemToPipeline(pipeline, item);
-            await pipeline.exec();
-            resolve(true);
+  async addAtomicItem(db: Redis, item: Item): Promise<boolean> {
+    const result = async (): Promise<boolean> => {
+      let transactionError = false;
+      let watchRetryCount = 0;
+  
+      do {
+        try {
+          await db.watch(this.mainQueueKey, this.processingKey);
+  
+          const pipeNew = db.pipeline();
+  
+          pipeNew.lpos(
+            this.processingKey,
+            item.id
+          );
+  
+          pipeNew.lpos(
+            this.mainQueueKey,
+            item.id
+          );
+  
+          const pipeResult = await pipeNew.exec();
+  
+          console.log(pipeResult);
+          if (!pipeResult || pipeResult[0][1] !== null || pipeResult[1][1] !== null) {
+            return false; // Item already exists in either mainQueue or processingKey
           }
-        });
-    });
+  
+          const pipeEx = db.pipeline();
+          this.addItemToPipeline(pipeEx, item);
+          await pipeEx.exec();
+          return true;
+        } catch (error) {
+          transactionError = true;
+          watchRetryCount++;
+        } finally {
+          db.unwatch();
+        }
+      } while (transactionError && watchRetryCount < 3);
+  
+      return false; // Transaction failed after maximum retries
+    };
+  
+    return await result(); // Invoke the async function to get the result
   }
+  
+  
+  
+  
+  
+  
 
   /**
    * Add an item to the work queue.
