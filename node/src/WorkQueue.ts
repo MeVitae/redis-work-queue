@@ -48,27 +48,42 @@ export class WorkQueue {
   }
 
   /**
+   * Add an item to the work queue in a atomic way.
+   * This creates a pipeline and executes it on the database if the item id is not already in either the main queue or the procesing queue.
+   *
+   * @param {Redis} db The Redis Connection.
+   * @param item The item that will be executed using the method addItemToPipeline.
+   */
+  async addAtomicItem(db: Redis, item: Item): Promise<boolean | null> {
+    return new Promise<boolean | null>((resolve, reject) => {
+      db.multi()
+        .lrange(this.mainQueueKey, 0, -1)
+        .lrange(this.processingKey, 0, -1)
+        .exec(async (err, results) => {
+          if (
+            results &&
+            ((results[0][1] as string[]).includes(item.id) ||
+              (results[1][1] as string[]).includes(item.id))
+          ) {
+            resolve(null);
+          } else {
+            const pipeline = db.pipeline();
+            this.addItemToPipeline(pipeline, item);
+            await pipeline.exec();
+            resolve(true);
+          }
+        });
+    });
+  }
+
+  /**
    * Add an item to the work queue.
    * This creates a pipeline and executes it on the database.
    *
    * @param {Redis} db The Redis Connection.
    * @param item The item that will be executed using the method addItemToPipeline.
    */
-  async addItem(db: Redis, item: Item): Promise<void | null> {
-    const MainItems: Array<string | number> = await db.lrange(
-      this.mainQueueKey,
-      0,
-      -1
-    );
-    const ProcessingItems: Array<string | number> = await db.lrange(
-      this.processingKey,
-      0,
-      -1
-    );
-    if (MainItems.includes(item.id) || ProcessingItems.includes(item.id)) {
-      //console.log("Same Item tryed being added twice.")
-      return null;
-    }
+  async addItem(db: Redis, item: Item): Promise<void> {
     const pipeline = db.pipeline();
     this.addItemToPipeline(pipeline, item);
     await pipeline.exec();
