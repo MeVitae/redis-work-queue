@@ -58,7 +58,7 @@ async fn run_duplicate_items_test() -> Result<(), Box<dyn std::error::Error>> {
         //work_queue1.add_atomic_item(&mut client, &item1).await?;
        // work_queue1.add_atomic_item(&mut client, &item2).await?;
         work_queue1.add_atomic_item(client, &item1).await?;
-        
+        work_queue1.add_atomic_item(client, &item2).await?;
 
         if rand::thread_rng().gen_range(0..10) < 3 {
             work_queue1.lease(client, Some(Duration::from_secs(1)), Duration::from_secs(4)).await?;
