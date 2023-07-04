@@ -59,8 +59,8 @@ func main() {
 		}
 		items = append(items, item1, item2)
 
-		result1 := workQueue.AddItem(ctx, db, item1)
-		result2 := workQueue.AddItem(ctx, db, item2)
+		result1 := workQueue.AddAtomicItem(ctx, db, item1)
+		result2 := workQueue.AddAtomicItem(ctx, db, item2)
 
 		if result1 == nil {
 			passed++

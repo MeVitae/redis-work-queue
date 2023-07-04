@@ -67,6 +67,7 @@ package workqueue
 import (
 	"context"
 	"time"
+
 	//"fmt"
 
 	"github.com/google/uuid"
@@ -115,24 +116,59 @@ func (workQueue *WorkQueue) AddItemToPipeline(ctx context.Context, pipeline redi
 //
 // This creates a pipeline and executes it on the database.
 func (workQueue *WorkQueue) AddItem(ctx context.Context, db *redis.Client, item Item) error {
-	mainItems := db.LRange(ctx, workQueue.mainQueueKey, 0, -1).Val()
-	processingItems := db.LRange(ctx, workQueue.processingKey, 0, -1).Val()
-	itemID := item.ID
-	
-	if sliceContainsString(mainItems, itemID) || sliceContainsString(processingItems, itemID) {
-		//fmt.Println(itemID, mainItems)
-		// Same item tried being added twice.
-		// fmt.Println("Same Item tried being added twice.")
-		return nil
-	}
-	
 	pipeline := db.Pipeline()
 	workQueue.AddItemToPipeline(ctx, pipeline, item)
 	_, err := pipeline.Exec(ctx)
 	return err
 }
 
-func (workQueue *WorkQueue) GetQueueLengths(ctx context.Context, db *redis.Client) ([]int64,error) {
+func (workQueue *WorkQueue) AddAtomicItem(ctx context.Context, db *redis.Client, item Item) error {
+	tx := db.TxPipeline()
+
+	// Add LRANGE commands to the transaction
+	tx.LRange(ctx, workQueue.mainQueueKey, 0, -1)
+	tx.LRange(ctx, workQueue.processingKey, 0, -1)
+
+	// Execute the transaction
+	results, err := tx.Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	mainItems := results[0].(*redis.StringSliceCmd).Val()
+	processingItems := results[1].(*redis.StringSliceCmd).Val()
+	itemID := item.ID
+
+	if sliceContainsString(mainItems, itemID) || sliceContainsString(processingItems, itemID) {
+		// Same item tried being added twice.
+		return nil
+	}
+
+	pipeline := db.TxPipeline()
+	workQueue.AddItemToPipeline(ctx, pipeline, item)
+	_, err = pipeline.Exec(ctx)
+	return err
+}
+
+func (workQueue *WorkQueue) GetQueueLengthsAtomic(ctx context.Context, db *redis.Client) ([]int64, error) {
+	tx := db.TxPipeline()
+
+	queueLen := tx.LLen(ctx, workQueue.mainQueueKey)
+	processingLen := tx.LLen(ctx, workQueue.processingKey)
+
+	_, err := tx.Exec(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]int64, 2)
+	result[0], _ = queueLen.Result()
+	result[1], _ = processingLen.Result()
+
+	return result, nil
+}
+
+func (workQueue *WorkQueue) GetQueueLengths(ctx context.Context, db *redis.Client) ([]int64, error) {
 	pipe := db.Pipeline()
 	queueLen := pipe.LLen(ctx, workQueue.mainQueueKey)
 	processingLen := pipe.LLen(ctx, workQueue.processingKey)
