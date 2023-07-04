@@ -174,12 +174,9 @@ func (workQueue *WorkQueue) AddAtomicItem(ctx context.Context, db *redis.Client,
 	err := db.Watch(ctx, txf, workQueue.mainQueueKey, workQueue.processingKey)
 	//fmt.Println(err)
 	for err == redis.TxFailedErr {
-		if err == nil {
-			// Success.
-			return nil
-		} else if err == redis.TxFailedErr {
-			err = db.Watch(ctx, txf, workQueue.mainQueueKey, workQueue.processingKey)
-		}
+
+		err = db.Watch(ctx, txf, workQueue.mainQueueKey, workQueue.processingKey)
+
 	}
 	return nil
 }
