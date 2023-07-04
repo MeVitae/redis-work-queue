@@ -34,16 +34,27 @@ class WorkQueue(object):
 
         This creates a pipeline and executes it on the database.
         """
-        main_items = db.lrange(self._main_queue_key, 0, -1)
-        processing_items = db.lrange(self._processing_key, 0, -1)
-        item_id = item.id().encode('utf-8')
-        if item_id in main_items or item_id in processing_items:
-            # Same item tried being added twice.
-            # print("Same Item tried being added twice.")
-            return None
         pipeline = db.pipeline()
         self.add_item_to_pipeline(pipeline, item)
         pipeline.execute()
+    
+    def add__atomic_item(self, db: Redis, item: Item) -> None:
+        """Add an item to the work queue in a atomic way.
+
+        This creates a pipeline and executes it on the database if the item you are trying to add is not in either the main or the processing queue.
+        """
+        pipeline = db.pipeline(transaction=True) 
+        
+        main_items = pipeline.lrange(self._main_queue_key, 0, -1)
+        processing_items = pipeline.lrange(self._processing_key, 0, -1)
+        item_id = item.id().encode('utf-8')
+
+        if item_id in main_items or item_id in processing_items:
+            # print("Same Item tried being added twice.")
+            return None
+        
+        self.add_item_to_pipeline(pipeline, item)
+        pipeline.execute()  
 
     def queue_len(self, db: Redis) -> int:
         """Return the length of the work queue (not including items being processed, see
@@ -57,7 +68,7 @@ class WorkQueue(object):
 
     def get_queue_lengths(self, db):
         """Return the length of the work queue and processing queue"""
-        pipeline = db.pipeline()
+        pipeline = db.pipeline(transaction=True)
         pipeline.llen(self._main_queue_key)
         pipeline.llen(self._processing_key)
         return pipeline.execute()

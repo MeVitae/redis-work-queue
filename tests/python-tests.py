@@ -37,8 +37,8 @@ for i in range(1, number_of_tests + 1):
     items.append(item1)
     items.append(item2)
 
-    result1 = work_queue.add_item(db, item1)
-    result2 = work_queue.add_item(db, item2)
+    result1 = work_queue.add__atomic_item(db, item1)
+    result2 = work_queue.add__atomic_item(db, item2)
 
     if result1 is None:
         passed += 1
