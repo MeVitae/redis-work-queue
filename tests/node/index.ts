@@ -131,8 +131,8 @@ async function testDuplicateItems() {
     items.push(item1);
     items.push(item2);
 
-    const result1 = await workQueue.addItem(db, item1);
-    const result2 = await workQueue.addItem(db, item2);
+    const result1 = await workQueue.addAtomicItem(db, item1);
+    const result2 = await workQueue.addAtomicItem(db, item2);
 
     if (result1 === undefined) {
       passed += 1;
@@ -186,5 +186,5 @@ async function testDuplicateItems() {
     );
   }
 }
-
+main()
 testDuplicateItems();
