@@ -48,9 +48,13 @@ class WorkQueue(object):
             try:
                 pipeline.watch(self._main_queue_key, self._processing_key)
 
-                main_pos = pipeline.lpos(self._main_queue_key, item.id())
-                processing_pos = pipeline.lpos(self._processing_key, item.id())
-                if main_pos is not None or processing_pos is not None:
+                pipelineLPOS = db.pipeline()
+
+                main_pos = pipelineLPOS.lpos(self._main_queue_key, item.id())
+                processing_pos = pipelineLPOS.lpos(self._processing_key, item.id())
+
+                LPosPipeline = pipelineLPOS.execute()
+                if LPosPipeline[0] is not None or LPosPipeline[1] is not None:
                     break  
 
                 pipeline.multi()
@@ -61,10 +65,6 @@ class WorkQueue(object):
                 continue
 
         pipeline.unwatch()
-
-        
-
-
 
     def queue_len(self, db: Redis) -> int:
         """Return the length of the work queue (not including items being processed, see
