@@ -173,14 +173,13 @@ func (workQueue *WorkQueue) AddItemAtomically(ctx context.Context, db *redis.Cli
 		return nil
 	}
 
-	err := db.Watch(ctx, txf, workQueue.mainQueueKey, workQueue.processingKey)
-	//fmt.Println(err)
-	for err == redis.TxFailedErr {
-
-		err = db.Watch(ctx, txf, workQueue.mainQueueKey, workQueue.processingKey)
-
+	for {
+		err := db.Watch(ctx, txf, workQueue.mainQueueKey, workQueue.processingKey)
+		// Retry on transaction failure, return on anything else.
+		if err != redis.TxFailedErr {
+			return err
+		}
 	}
-	return nil
 }
 
 func (workQueue *WorkQueue) GetQueueLengths(ctx context.Context, db *redis.Client) ([]int64, error) {
