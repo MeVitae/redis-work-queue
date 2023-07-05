@@ -172,19 +172,12 @@ func (workQueue *WorkQueue) Lengths(ctx context.Context, db *redis.Client) (queu
 	processingLenPipe := tx.LLen(ctx, workQueue.processingKey)
 
 	_, err = tx.Exec(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
 
 	queueLen, err = queueLenPipe.Result()
-	if err != nil {
-		return 0, 0, err
-	}
 	processingLen, err = processingLenPipe.Result()
-	if err != nil {
-		return 0, 0, err
-	}
-
-	if err != nil {
-		return 0, 0, err
-	}
 
 	return
 }
