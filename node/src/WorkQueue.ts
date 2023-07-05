@@ -59,7 +59,6 @@ export class WorkQueue {
    */
 
   async addAtomicItem(db: Redis, item: Item): Promise<boolean | null> {
-    const result = async (): Promise<boolean> => {
       let transactionError = true;
       let success = false;
       do {
@@ -82,24 +81,18 @@ export class WorkQueue {
   
           const pipeEx = db.multi();
           this.addItemToPipeline(pipeEx, item);
-          await pipeEx.exec((err, results) => {
-            if (results && results[0][1] === "OK") {
-              success = true;
-              transactionError = false;
-              return transactionError;
-            }
-          });
-        } catch (error) {
-          transactionError = false;
+          let results = await pipeEx.exec()
+          if (results && results[0][1] === "OK") {
+            success = true;
+            transactionError = false;
+            return transactionError;
+          }
         } finally {
           db.unwatch();
         }
       } while (transactionError);
   
       return success;
-    };
-  
-    return await result();
   }
   
   
