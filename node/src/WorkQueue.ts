@@ -7,6 +7,7 @@ import Redis, {ChainableCommander} from 'ioredis';
 import {v4 as uuidv4} from 'uuid';
 import {Item} from './Item';
 import {KeyPrefix} from './KeyPrefix';
+import { resolve } from 'path';
 
 export {KeyPrefix, Item};
 
@@ -56,55 +57,52 @@ export class WorkQueue {
    * @param {Redis} db The Redis Connection.
    * @param item The item that will be executed using the method addItemToPipeline.
    */
-  async addAtomicItem(db: Redis, item: Item): Promise<boolean> {
+
+  async addAtomicItem(db: Redis, item: Item): Promise<boolean | null> {
     const result = async (): Promise<boolean> => {
-      let transactionError = false;
+      let transactionError = true;
+      let success = false;
       do {
         try {
           await db.watch(this.mainQueueKey, this.processingKey);
   
           const pipeNew = db.pipeline();
   
-          pipeNew.lpos(
-            this.processingKey,
-            item.id
-          );
+          pipeNew.lpos(this.processingKey, item.id);
   
-          pipeNew.lpos(
-            this.mainQueueKey,
-            item.id
-          );
+          pipeNew.lpos(this.mainQueueKey, item.id);
   
           const pipeResult = await pipeNew.exec();
   
-          console.log(pipeResult);
-          if (!pipeResult || pipeResult[0][1] !== null || pipeResult[1][1] !== null) {
-            return false; // Item already exists in either mainQueue or processingKey
+
+          if (pipeResult && (pipeResult[0][1] !== null || pipeResult[1][1] !== null)) {
+            transactionError = false; // Item already exists in either mainQueue or processingKey
+            return false;
           }
   
-          const pipeEx = db.pipeline();
+          const pipeEx = db.multi();
           this.addItemToPipeline(pipeEx, item);
-          await pipeEx.exec();
-          return true;
+          await pipeEx.exec((err, results) => {
+            if (results && results[0][1] === "OK") {
+              success = true;
+              transactionError = false;
+              return transactionError;
+            }
+          });
         } catch (error) {
-          transactionError = true;
+          transactionError = false;
         } finally {
           db.unwatch();
         }
       } while (transactionError);
   
-      return false; 
+      return success;
     };
   
-    return await result(); // Invoke the async function to get the result
+    return await result();
   }
   
   
-  
-  
-  
-  
-
   /**
    * Add an item to the work queue.
    * This creates a pipeline and executes it on the database.

@@ -66,7 +66,6 @@ package workqueue
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -169,22 +168,25 @@ func (workQueue *WorkQueue) AddItemAtomically(ctx context.Context, db *redis.Cli
 func (workQueue *WorkQueue) Lengths(ctx context.Context, db *redis.Client) (queueLen, processingLen int64, err error) {
 	tx := db.TxPipeline()
 
-	queueLen, err = tx.LLen(ctx, workQueue.mainQueueKey).Result()
-	if err != nil {
-		return 0, 0, err
-	}
-
-	processingLen, err = tx.LLen(ctx, workQueue.processingKey).Result()
-	if err != nil {
-		return 0, 0, err
-	}
+	queueLenPipe := tx.LLen(ctx, workQueue.mainQueueKey)
+	processingLenPipe := tx.LLen(ctx, workQueue.processingKey)
 
 	_, err = tx.Exec(ctx)
+
+	queueLen, err = queueLenPipe.Result()
+	if err != nil {
+		return 0, 0, err
+	}
+	processingLen, err = processingLenPipe.Result()
 	if err != nil {
 		return 0, 0, err
 	}
 
-	return queueLen, processingLen, err
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return
 }
 
 // Return the length of the work queue (not including items being processed, see
