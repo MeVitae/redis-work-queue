@@ -168,6 +168,9 @@ func (workQueue *WorkQueue) AddItemAtomically(ctx context.Context, db *redis.Cli
 	}
 }
 
+// Lengths gets you the lengths of the lists atomically.
+//
+// This can be used to get the real number of items within the main and processing queue
 func (workQueue *WorkQueue) Lengths(ctx context.Context, db *redis.Client) (queueLen, processingLen int64, err error) {
 	tx := db.TxPipeline()
 

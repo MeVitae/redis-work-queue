@@ -115,8 +115,9 @@ export class WorkQueue {
   }
 
   /**
-   * This is used to ge the lenght of the Queues in a atomic way.
-   *
+   * Lengths gets you the lengths of the lists atomically.
+   * This can be used to get the real number of items within the main and processing queue
+   * 
    * @param {Redis} db The Redis Connection.
    * @returns {Promise<[number, number]>} Return the length of main queue and processing queue.
    */

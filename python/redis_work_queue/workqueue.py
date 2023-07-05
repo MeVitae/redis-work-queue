@@ -81,7 +81,9 @@ class WorkQueue(object):
 
 
     def get_queue_lengths(self, db):
-        """Return the length of the work queue and processing queue"""
+        """Returns the lengths of the lists atomically.
+        This can be used to get the real number of items within the main and processing queue.
+        """
         pipeline = db.pipeline(transaction=True)
         pipeline.llen(self._main_queue_key)
         pipeline.llen(self._processing_key)
