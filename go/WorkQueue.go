@@ -69,8 +69,6 @@ import (
 	"fmt"
 	"time"
 
-	//"fmt"
-
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
@@ -123,8 +121,12 @@ func (workQueue *WorkQueue) AddItem(ctx context.Context, db *redis.Client, item 
 	return err
 }
 
-// **************-This method can be used only when database is locked-**************
-func (workQueue *WorkQueue) AddAtomicItem(ctx context.Context, db *redis.Client, item Item) error {
+// AddItemAtomically to the work Queue.
+//
+// This creates a pipeline and executes it on the database if there is no other same item inside eitther main or processing queue.
+//
+// This method can be used only when database is locked
+func (workQueue *WorkQueue) AddItemAtomically(ctx context.Context, db *redis.Client, item Item) error {
 	txf := func(tx *redis.Tx) error {
 		pipe := db.Pipeline()
 
