@@ -38,23 +38,33 @@ class WorkQueue(object):
         self.add_item_to_pipeline(pipeline, item)
         pipeline.execute()
     
-    def add__atomic_item(self, db: Redis, item: Item) -> None:
-        """Add an item to the work queue in a atomic way.
+    def add_item_atomically(self, db: Redis, item: Item) -> None:
+        """Add an item to the work queue in an atomic way.
 
-        This creates a pipeline and executes it on the database if the item you are trying to add is not in either the main or the processing queue.
+        This checks for the existence of the item in either the main or the processing queue, and adds it to the main queue atomically.
         """
-        pipeline = db.pipeline(transaction=True) 
-        
-        main_items = pipeline.lrange(self._main_queue_key, 0, -1)
-        processing_items = pipeline.lrange(self._processing_key, 0, -1)
-        item_id = item.id().encode('utf-8')
+        pipeline = db.pipeline(transaction=True)
+        while True:
+            try:
+                pipeline.watch(self._main_queue_key, self._processing_key)
 
-        if item_id in main_items or item_id in processing_items:
-            # print("Same Item tried being added twice.")
-            return None
+                main_pos = pipeline.lpos(self._main_queue_key, item.id())
+                processing_pos = pipeline.lpos(self._processing_key, item.id())
+                if main_pos is not None or processing_pos is not None:
+                    break  
+
+                pipeline.multi()
+                self.add_item_to_pipeline(pipeline, item)
+                pipeline.execute()
+                break
+            except WatchError:
+                continue
+
+        pipeline.unwatch()
+
         
-        self.add_item_to_pipeline(pipeline, item)
-        pipeline.execute()  
+
+
 
     def queue_len(self, db: Redis) -> int:
         """Return the length of the work queue (not including items being processed, see
