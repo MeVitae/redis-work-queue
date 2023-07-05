@@ -40,8 +40,12 @@ class WorkQueue(object):
     
     def add_item_atomically(self, db: Redis, item: Item) -> None:
         """Add an item to the work queue in an atomic way.
+        This function allows the adding of item to queue atomically. Using Watch it keeps trying to execute
+        addItem untill there is no change within the queues, verifications have been done and the addItem has been fully executed.
+        Therefore this wont allow duplifications of items within the queues
+        This method should be used only when database is locked it could break other redis commands.
 
-        This checks for the existence of the item in either the main or the processing queue, and adds it to the main queue atomically.
+        This returns False if item was already in queue otherwise True as Item was addeed to the queue.
         """
         pipeline = db.pipeline(transaction=True)
         while True:
@@ -55,12 +59,12 @@ class WorkQueue(object):
 
                 LPosPipeline = pipelineLPOS.execute()
                 if LPosPipeline[0] is not None or LPosPipeline[1] is not None:
-                    break  
+                    return False  
 
                 pipeline.multi()
                 self.add_item_to_pipeline(pipeline, item)
                 pipeline.execute()
-                break
+                return True
             except WatchError:
                 continue
 

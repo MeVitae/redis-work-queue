@@ -122,9 +122,12 @@ func (workQueue *WorkQueue) AddItem(ctx context.Context, db *redis.Client, item 
 
 // AddItemAtomically to the work Queue.
 //
-// This creates a pipeline and executes it on the database if there is no other same item inside eitther main or processing queue.
+// This function allows the adding of item to queue atomically. Using Watch it keeps trying to execute
+// addItem untill there is no change within the queues, verifications have been done and the addItem has been fully executed.
+// Therefore this wont allow duplifications of items within the queues
+// This method should be used only when database is locked it could break other redis commands.
 //
-// This method can be used only when database is locked
+// Returns nil if successful  otherwise the error.
 func (workQueue *WorkQueue) AddItemAtomically(ctx context.Context, db *redis.Client, item Item) error {
 	txf := func(tx *redis.Tx) error {
 
@@ -172,13 +175,12 @@ func (workQueue *WorkQueue) Lengths(ctx context.Context, db *redis.Client) (queu
 	processingLenPipe := tx.LLen(ctx, workQueue.processingKey)
 
 	_, err = tx.Exec(ctx)
-	if err != nil {
-		return 0, 0, err
+	if err == nil {
+		queueLen, err = queueLenPipe.Result()
 	}
-
-	queueLen, err = queueLenPipe.Result()
-	processingLen, err = processingLenPipe.Result()
-
+	if err == nil {
+		processingLen, err = processingLenPipe.Result()
+	}
 	return
 }
 
