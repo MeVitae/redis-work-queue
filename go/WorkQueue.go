@@ -128,40 +128,24 @@ func (workQueue *WorkQueue) AddItem(ctx context.Context, db *redis.Client, item 
 // This method can be used only when database is locked
 func (workQueue *WorkQueue) AddItemAtomically(ctx context.Context, db *redis.Client, item Item) error {
 	txf := func(tx *redis.Tx) error {
-		pipe := db.Pipeline()
-
-		mainQueueLenCmd := pipe.LLen(ctx, workQueue.mainQueueKey)
-		processingQueueLenCmd := pipe.LLen(ctx, workQueue.processingKey)
-
-		_, err := pipe.Exec(ctx)
-
-		mainQueueLen, err := mainQueueLenCmd.Result()
-
-		processingQueueLen, err := processingQueueLenCmd.Result()
 
 		pipeNew := db.Pipeline()
 
 		processingItemsInQueueCmd := pipeNew.LPos(ctx, workQueue.processingKey, item.ID, redis.LPosArgs{
-			Rank:   -1,
-			MaxLen: processingQueueLen,
+			Rank:   0,
+			MaxLen: 0,
 		})
 
 		workingItemsInQueueCmd := pipeNew.LPos(ctx, workQueue.mainQueueKey, item.ID, redis.LPosArgs{
-			Rank:   -1,
-			MaxLen: mainQueueLen,
+			Rank:   0,
+			MaxLen: 0,
 		})
 
-		_, err = pipeNew.Exec(ctx)
+		_, err := pipeNew.Exec(ctx)
 
-		processingItemsInQueue, err := processingItemsInQueueCmd.Result()
-
-		fmt.Println(processingItemsInQueue)
-
-		workingItemsInQueue, err := workingItemsInQueueCmd.Result()
-
-		fmt.Println(workingItemsInQueue, processingItemsInQueue, item.ID)
-
-		if workingItemsInQueue == 0 && processingItemsInQueue == 0 {
+		_, ProcessingQueueCheck := processingItemsInQueueCmd.Result()
+		_, WorkingQueueCheck := workingItemsInQueueCmd.Result()
+		if ProcessingQueueCheck == redis.Nil && WorkingQueueCheck == redis.Nil {
 
 			pipeEx := tx.Pipeline()
 			workQueue.AddItemToPipeline(ctx, pipeEx, item)
@@ -182,22 +166,25 @@ func (workQueue *WorkQueue) AddItemAtomically(ctx context.Context, db *redis.Cli
 	}
 }
 
-func (workQueue *WorkQueue) GetQueueLengths(ctx context.Context, db *redis.Client) ([]int64, error) {
+func (workQueue *WorkQueue) Lengths(ctx context.Context, db *redis.Client) (queueLen, processingLen int64, err error) {
 	tx := db.TxPipeline()
 
-	queueLen := tx.LLen(ctx, workQueue.mainQueueKey)
-	processingLen := tx.LLen(ctx, workQueue.processingKey)
-
-	_, err := tx.Exec(ctx)
+	queueLen, err = tx.LLen(ctx, workQueue.mainQueueKey).Result()
 	if err != nil {
-		return nil, err
+		return 0, 0, err
 	}
 
-	result := make([]int64, 2)
-	result[0], _ = queueLen.Result()
-	result[1], _ = processingLen.Result()
+	processingLen, err = tx.LLen(ctx, workQueue.processingKey).Result()
+	if err != nil {
+		return 0, 0, err
+	}
 
-	return result, nil
+	_, err = tx.Exec(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return queueLen, processingLen, err
 }
 
 // Return the length of the work queue (not including items being processed, see

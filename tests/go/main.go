@@ -154,8 +154,8 @@ func main() {
 	shared := false
 	for {
 		shared = !shared
-		fmt.Println(goQueue.GetQueueLengths(ctx, db))
-		fmt.Println(sharedQueue.GetQueueLengths(ctx, db))
+		fmt.Println(goQueue.Lengths(ctx, db))
+		fmt.Println(sharedQueue.Lengths(ctx, db))
 		if shared {
 			sharedJobCounter++
 
