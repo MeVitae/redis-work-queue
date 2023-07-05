@@ -59,8 +59,6 @@ export class WorkQueue {
   async addAtomicItem(db: Redis, item: Item): Promise<boolean> {
     const result = async (): Promise<boolean> => {
       let transactionError = false;
-      let watchRetryCount = 0;
-  
       do {
         try {
           await db.watch(this.mainQueueKey, this.processingKey);
@@ -90,13 +88,12 @@ export class WorkQueue {
           return true;
         } catch (error) {
           transactionError = true;
-          watchRetryCount++;
         } finally {
           db.unwatch();
         }
-      } while (transactionError && watchRetryCount < 3);
+      } while (transactionError);
   
-      return false; // Transaction failed after maximum retries
+      return false; 
     };
   
     return await result(); // Invoke the async function to get the result
