@@ -37,6 +37,38 @@ class WorkQueue(object):
         pipeline = db.pipeline()
         self.add_item_to_pipeline(pipeline, item)
         pipeline.execute()
+    
+    def add_item_atomically(self, db: Redis, item: Item) -> None:
+        """Add an item to the work queue in an atomic way.
+        This function allows the adding of item to queue atomically. Using Watch it keeps trying to execute
+        addItem untill there is no change within the queues, verifications have been done and the addItem has been fully executed.
+        Therefore this wont allow duplifications of items within the queues
+        This method should be used only when database is locked it could break other redis commands.
+
+        This returns False if item was already in queue otherwise True as Item was addeed to the queue.
+        """
+        pipeline = db.pipeline(transaction=True)
+        while True:
+            try:
+                pipeline.watch(self._main_queue_key, self._processing_key)
+
+                pipelineLPOS = db.pipeline()
+
+                main_pos = pipelineLPOS.lpos(self._main_queue_key, item.id())
+                processing_pos = pipelineLPOS.lpos(self._processing_key, item.id())
+
+                LPosPipeline = pipelineLPOS.execute()
+                if LPosPipeline[0] is not None or LPosPipeline[1] is not None:
+                    return False  
+
+                pipeline.multi()
+                self.add_item_to_pipeline(pipeline, item)
+                pipeline.execute()
+                return True
+            except WatchError:
+                continue
+
+        pipeline.unwatch()
 
     def queue_len(self, db: Redis) -> int:
         """Return the length of the work queue (not including items being processed, see
@@ -46,6 +78,18 @@ class WorkQueue(object):
     def processing(self, db: Redis) -> int:
         """Return the number of items being processed."""
         return db.llen(self._processing_key)
+
+
+    def get_queue_lengths(self, db):
+        """Returns the lengths of the lists atomically.
+        This can be used to get the real number of items within the main and processing queue.
+        """
+        pipeline = db.pipeline(transaction=True)
+        pipeline.llen(self._main_queue_key)
+        pipeline.llen(self._processing_key)
+        return pipeline.execute()
+
+
 
     def light_clean(self, db: Redis) -> None:
         processing: list[bytes | str] = db.lrange(

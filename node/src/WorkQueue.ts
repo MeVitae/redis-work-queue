@@ -7,6 +7,11 @@ import Redis, {ChainableCommander} from 'ioredis';
 import {v4 as uuidv4} from 'uuid';
 import {Item} from './Item';
 import {KeyPrefix} from './KeyPrefix';
+import { resolve } from 'path';
+
+function delay(ms: number) {
+  return new Promise( resolve => setTimeout(resolve, ms) );
+}
 
 export {KeyPrefix, Item};
 
@@ -48,6 +53,45 @@ export class WorkQueue {
   }
 
   /**
+   * This function allows the adding of item to queue atomically. Using Watch it keeps trying to execute
+   * addItem untill there is no change within the queues, verifications have been done and the addItem has been fully executed.
+   * Therefore this wont allow duplifications of items within the queues
+   * This method should be used only when database is locked it could break other redis commands.
+   * 
+   * @param {Redis} db The Redis Connection.
+   * @param item The item that will be executed using the method addItemToPipeline.
+   * @returns {boolean} returns false if already in queue or true if the transaction succesfully happen.
+   */
+  async addAtomicItem(db: Redis, item: Item): Promise<boolean> {
+      for (;;) {
+        try {
+          await db.watch(this.mainQueueKey, this.processingKey);
+  
+          const pipeNew = db.pipeline();
+  
+          pipeNew.lpos(this.processingKey, item.id);
+  
+          pipeNew.lpos(this.mainQueueKey, item.id);
+  
+          const pipeResult = await pipeNew.exec();
+          if (pipeResult && (pipeResult[0][1] !== null || pipeResult[1][1] !== null)) {
+            return false;// Item already exists in either mainQueue or processingKey
+          }
+          
+          const pipeEx = db.multi();
+          this.addItemToPipeline(pipeEx, item);
+          let results = await pipeEx.exec()
+          if (results && results[0][1] === "OK") {
+            return true;
+          }
+        } finally {
+          db.unwatch();
+        }
+      }
+  }
+  
+  
+  /**
    * Add an item to the work queue.
    * This creates a pipeline and executes it on the database.
    *
@@ -68,6 +112,24 @@ export class WorkQueue {
    */
   queueLen(db: Redis): Promise<number> {
     return db.llen(this.mainQueueKey);
+  }
+
+  /**
+   * Lengths gets you the lengths of the lists atomically.
+   * This can be used to get the real number of items within the main and processing queue
+   * 
+   * @param {Redis} db The Redis Connection.
+   * @returns {Promise<[number, number]>} Return the length of main queue and processing queue.
+   */
+  async getQueueLengths(db: Redis): Promise<[number, number]> {
+    const multi = db.multi();
+    multi.llen(this.mainQueueKey);
+    multi.llen(this.processingKey);
+
+    const result = (await multi.exec()) as Array<[Error | null, number]>;
+    const queueLength = result[0][1];
+    const processingLength = result[1][1];
+    return [queueLength, processingLength];
   }
 
   /**

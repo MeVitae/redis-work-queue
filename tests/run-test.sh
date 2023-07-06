@@ -42,6 +42,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+python3 job-spawner-and-cleaner.py "$host" "$tests" &
 
 mkdir -p /tmp/redis-work-queue-test-logs
 
@@ -105,4 +106,4 @@ if [[ "$tests" == *"node"* ]]; then
 fi
 
 echo "Running spawner..."
-python3 job-spawner-and-cleaner.py "$host" "$tests"
+

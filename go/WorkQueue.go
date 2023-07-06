@@ -120,6 +120,73 @@ func (workQueue *WorkQueue) AddItem(ctx context.Context, db *redis.Client, item 
 	return err
 }
 
+// AddItemAtomically to the work Queue.
+//
+// This function allows the adding of item to queue atomically. Using Watch it keeps trying to execute
+// addItem untill there is no change within the queues, verifications have been done and the addItem has been fully executed.
+// Therefore this wont allow duplifications of items within the queues
+// This method should be used only when database is locked it could break other redis commands.
+//
+// Returns nil if successful  otherwise the error.
+func (workQueue *WorkQueue) AddItemAtomically(ctx context.Context, db *redis.Client, item Item) error {
+	txf := func(tx *redis.Tx) error {
+
+		pipeNew := db.Pipeline()
+
+		processingItemsInQueueCmd := pipeNew.LPos(ctx, workQueue.processingKey, item.ID, redis.LPosArgs{
+			Rank:   0,
+			MaxLen: 0,
+		})
+
+		workingItemsInQueueCmd := pipeNew.LPos(ctx, workQueue.mainQueueKey, item.ID, redis.LPosArgs{
+			Rank:   0,
+			MaxLen: 0,
+		})
+
+		_, err := pipeNew.Exec(ctx)
+
+		_, ProcessingQueueCheck := processingItemsInQueueCmd.Result()
+		_, WorkingQueueCheck := workingItemsInQueueCmd.Result()
+		if ProcessingQueueCheck == redis.Nil && WorkingQueueCheck == redis.Nil {
+
+			pipeEx := tx.Pipeline()
+			workQueue.AddItemToPipeline(ctx, pipeEx, item)
+			_, err = pipeEx.Exec(ctx)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	for {
+		err := db.Watch(ctx, txf, workQueue.mainQueueKey, workQueue.processingKey)
+		// Retry on transaction failure, return on anything else.
+		if err != redis.TxFailedErr {
+			return err
+		}
+	}
+}
+
+// Lengths gets you the lengths of the lists atomically.
+//
+// This can be used to get the real number of items within the main and processing queue
+func (workQueue *WorkQueue) Lengths(ctx context.Context, db *redis.Client) (queueLen, processingLen int64, err error) {
+	tx := db.TxPipeline()
+
+	queueLenPipe := tx.LLen(ctx, workQueue.mainQueueKey)
+	processingLenPipe := tx.LLen(ctx, workQueue.processingKey)
+
+	_, err = tx.Exec(ctx)
+	if err == nil {
+		queueLen, err = queueLenPipe.Result()
+	}
+	if err == nil {
+		processingLen, err = processingLenPipe.Result()
+	}
+	return
+}
+
 // Return the length of the work queue (not including items being processed, see
 // [WorkQueue.Processing]).
 func (workQueue *WorkQueue) QueueLen(ctx context.Context, db *redis.Client) (int64, error) {
@@ -203,4 +270,13 @@ func (workQueue *WorkQueue) Complete(ctx context.Context, db *redis.Client, item
 		return nil
 	})
 	return true, err
+}
+
+func sliceContainsString(slice []string, target string) bool {
+	for _, s := range slice {
+		if s == target {
+			return true
+		}
+	}
+	return false
 }

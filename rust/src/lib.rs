@@ -280,12 +280,43 @@ impl WorkQueue {
     /// Add an item to the work queue.
     ///
     /// This creates a pipeline and executes it on the database.
+    pub async fn add_atomic_item <'a,C: AsyncCommands>(
+        &'a self,
+        connection: &mut C,
+        item: &Item,
+    ) -> Result<Option<bool>, redis::RedisError> {
+
+        let main_queue_key = self.main_queue_key.clone();
+        let processing_key = self.main_queue_key.clone();
+    
+        let mut pipe = redis::pipe();
+    
+        pipe
+            .atomic()
+            .cmd("LRANGE").arg(&main_queue_key).arg(0).arg(-1)
+            .cmd("LRANGE").arg(&processing_key).arg(0).arg(-1);
+    
+        let result: Vec<Vec<String>> = pipe.query_async(connection).await?;
+    
+        let main_items = &result[0];
+        let processing_items = &result[1];
+    
+        if main_items.contains(&item.id) || processing_items.contains(&item.id) {
+            return Ok(None);
+        } else {
+            let mut pipeline = redis::pipe();
+            self.add_item_to_pipeline(&mut pipeline, &item);
+            pipeline.query_async(connection).await?;
+            return Ok(Some(true));
+        }
+    }
+
     pub async fn add_item<C: AsyncCommands>(&self, db: &mut C, item: &Item) -> RedisResult<()> {
         let mut pipeline = Box::new(redis::pipe());
         self.add_item_to_pipeline(&mut pipeline, item);
         pipeline.query_async(db).await
     }
-
+    
     /// Return the length of the work queue (not including items being processed, see
     /// [`WorkQueue::processing`]).
     pub fn queue_len<'a, C: AsyncCommands>(
@@ -303,6 +334,20 @@ impl WorkQueue {
         db.llen(&self.processing_key)
     }
 
+    pub async fn get_queue_lengths<'a, C: AsyncCommands>(
+        &'a self,
+        db: &mut C,
+    ) -> RedisResult<Vec<i64>> {
+        let (queue_length, processing_length): (i64, i64) = redis::pipe()
+            .atomic()
+            .llen(&self.main_queue_key)
+            .llen(&self.processing_key)
+            .query_async(db)
+            .await?;
+    
+        Ok(vec![queue_length, processing_length])
+    }
+    
     /// Request a work lease the work queue. This should be called by a worker to get work to
     /// complete. When completed, the `complete` method should be called.
     ///
