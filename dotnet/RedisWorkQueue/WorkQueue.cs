@@ -8,11 +8,6 @@ namespace RedisWorkQueue
     /// </summary>
     public class WorkQueue
     {
-    /// <summary>
-    /// Represents a work queue in Redis.
-    /// </summary>
-    public class WorkQueue
-    {
         /// <summary>
         /// Gets or sets the unique identifier for the current session.
         /// </summary>
