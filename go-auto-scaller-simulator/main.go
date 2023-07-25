@@ -35,40 +35,42 @@ type document struct {
 }
 
 type progress struct {
+	mu           sync.Mutex
 	haveToBeDone int
 	done         int
 }
 
 type SafeCounter struct {
-	mu       sync.Mutex
-	progress map[string]progress
+	mu       sync.RWMutex
+	progress map[string]*progress
 }
 
-var docsNeedToBeDone = SafeCounter{progress: make(map[string]progress)}
+var docsNeedToBeDone = SafeCounter{progress: make(map[string]*progress)}
 
 func createNewDocToProcess(chanel chan incomingJob, chanelSD chan incomingJob) {
-	go func() {
-		doc := document{
-			pages:  generateRandomNumber(1, 3),
-			images: generateRandomNumber(1, 4),
-			id:     uuid.New().String(),
-		}
-		docsNeedToBeDone.mu.Lock()
-		// Lock so only one goroutine at a time can access the map c.v.
-		docsNeedToBeDone.progress[doc.id] = progress{}
+	doc := document{
+		pages:  generateRandomNumber(1, 3),
+		images: 0,
+		id:     uuid.New().String(),
+	}
+	if generateRandomBool(1, 4) {
+		doc.images = generateRandomNumber(1, 24)
+	}
 
-		docsNeedToBeDone.mu.Unlock()
+	// Lock so only one goroutine at a time can access the map c.v.
+	docsNeedToBeDone.mu.Lock()
+	docsNeedToBeDone.progress[doc.id] = &progress{}
+	docsNeedToBeDone.mu.Unlock()
 
-		for i := 0; i < doc.images; i++ {
-			chanel <- incomingJob{name: "PSD", time: 0, startAt: tick, myData: doc}
-		}
-		for i := 0; i < doc.pages; i++ {
-			chanelSD <- incomingJob{name: "SD", time: 0, startAt: tick, myData: doc}
-		}
-		//fmt.Println("job")
-		//	fmt.Println(doc.images, "-")
-		//fmt.Println(docsNeedToBeDone[jobID.myData.id].done)
-	}()
+	for i := 0; i < doc.images; i++ {
+		chanel <- incomingJob{name: "PSD", time: 0, startAt: tick, myData: doc}
+	}
+	for i := 0; i < doc.pages; i++ {
+		chanelSD <- incomingJob{name: "SD", time: 0, startAt: tick, myData: doc}
+	}
+	//fmt.Println("job")
+	//	fmt.Println(doc.images, "-")
+	//fmt.Println(docsNeedToBeDone[jobID.myData.id].done)
 }
 
 //  1000 ticks == 1 second
@@ -90,6 +92,7 @@ type job struct {
 	MyData      document
 }
 
+// TODO: rename to deployment
 type pod struct {
 	workers []worker
 	jobs    map[string]job
@@ -101,7 +104,6 @@ type incomingJob struct {
 	name    string
 	startAt int
 	myData  document
-	isTick  bool
 }
 
 type PowerRange struct {
@@ -207,6 +209,7 @@ func podF(name string, incomingJobChan chan incomingJob, finishjob chan job, inc
 	}
 
 	toDropWorkers := make(map[string]int32)
+	fmt.Println(name, "is ready")
 	//Pod.workers = append(Pod.workers, worker{timetilDie: -1, power: 1, workingon: "", timeTilStart: 140000})
 	for {
 		select {
@@ -216,8 +219,6 @@ func podF(name string, incomingJobChan chan incomingJob, finishjob chan job, inc
 				// incomingJobChan is closed, exit the goroutine
 				fmt.Println("tickclosed")
 				break
-			}
-			if !jobID.isTick {
 			}
 			uuid := uuid.New()
 
@@ -230,13 +231,13 @@ func podF(name string, incomingJobChan chan incomingJob, finishjob chan job, inc
 				MyData:      jobID.myData,
 			}
 			dn += 1
-			docsNeedToBeDone.mu.Lock()
 
+			docsNeedToBeDone.mu.RLock()
 			mdoc := docsNeedToBeDone.progress[jobID.myData.id]
+			docsNeedToBeDone.mu.RUnlock()
+			mdoc.mu.Lock()
 			mdoc.haveToBeDone += 1
-			docsNeedToBeDone.progress[jobID.myData.id] = mdoc
-
-			docsNeedToBeDone.mu.Unlock()
+			mdoc.mu.Unlock()
 
 		case ticking, ok := <-inctick:
 			if !ok {
@@ -245,7 +246,6 @@ func podF(name string, incomingJobChan chan incomingJob, finishjob chan job, inc
 				break
 			}
 			if ticking {
-
 				if tick%50 == 0 {
 					//		fmt.Println(Pod)
 					realWorkers := make(map[string]int32)
@@ -340,17 +340,16 @@ func podF(name string, incomingJobChan chan incomingJob, finishjob chan job, inc
 							myjob.powerNeeded -= worker.power
 							Pod.jobs[worker.workingon] = myjob
 						} else {
-
-							docsNeedToBeDone.mu.Lock()
-
+							docsNeedToBeDone.mu.RLock()
 							mdoc := docsNeedToBeDone.progress[myjob.MyData.id]
+							docsNeedToBeDone.mu.RUnlock()
+							mdoc.mu.Lock()
 							mdoc.done += 1
-							docsNeedToBeDone.progress[myjob.MyData.id] = mdoc
+							mdoc.mu.Unlock()
+
 							finishjob <- Pod.jobs[worker.workingon]
 							delete(Pod.jobs, worker.workingon)
 							Pod.workers[Wid].workingon = ""
-
-							docsNeedToBeDone.mu.Unlock()
 						}
 					}
 				}
@@ -365,10 +364,15 @@ func podF(name string, incomingJobChan chan incomingJob, finishjob chan job, inc
 
 func main() {
 	go startPlotGraph()
+	// Person and signature detection (TODO: split up)
 	incomingJobPSD := make(chan incomingJob, 32000)
+	// Section detection
 	incomingJobSD := make(chan incomingJob, 32000)
+	// Reading order
 	incomingJobRO := make(chan incomingJob, 32000)
+	// NER
 	incomingJobNER := make(chan incomingJob, 32000)
+	// TODO: add feature extraction
 
 	ticking1 := make(chan bool, 16000)
 	ticking2 := make(chan bool, 16000)
@@ -376,6 +380,7 @@ func main() {
 	ticking4 := make(chan bool, 16000)
 	jobFinish := make(chan job, 16000)
 
+	fmt.Println("Spawning")
 	go podF("PSD", incomingJobPSD, jobFinish, ticking1)
 	go podF("SD", incomingJobSD, jobFinish, ticking2)
 	go podF("RO", incomingJobRO, jobFinish, ticking3)
@@ -421,11 +426,13 @@ func main() {
 				incomingJobNER <- incomingJob{name: "NER", time: job.myTicks, startAt: job.startedAt, myData: job.MyData}
 			} else if job.jobType == "NER" {
 				//fmt.Println(dn, "dn", docsNeedToBeDone.progress[job.MyData.id])
+				docsNeedToBeDone.mu.RLock()
 				if docsNeedToBeDone.progress[job.MyData.id].done == docsNeedToBeDone.progress[job.MyData.id].haveToBeDone {
 					fmt.Println("job job finished:", tick/100-job.startedAt/100, "Seconds")
 					seconds += tick/100 - job.startedAt/100
 					jobsDone++
 				}
+				docsNeedToBeDone.mu.RUnlock()
 			}
 		default:
 
