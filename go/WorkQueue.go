@@ -1,4 +1,4 @@
-// Package workqueue is the Go implementation of a work queue, on top of a redis database, with implementations in Python, Rust, Go and C#.
+// Package workqueue is the Go implementation of a work queue, on top of a redis database, with implementations in Python, Rust, Go, Node.js (TypeScript) and Dotnet (C#).
 //
 // For an overview of how the work queue works, it’s limitations, and the general concepts and
 // implementations in other languages, please read the redis-work-queue readme at

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "redis-work-queue"
-version = "0.1.3"
-description = "A work queue, on top of a redis database, with implementations in Python, Rust, Go and C#."
+version = "0.1.5"
+description = "A work queue, on top of a redis database, with implementations in Python, Rust, Go, Node.js (TypeScript) and Dotnet (C#)."
 dependencies = ["redis", "uuid"]
 authors = [
     { name = "Jacob O'Toole", email = "jacob.otoole@mevitae.com" }

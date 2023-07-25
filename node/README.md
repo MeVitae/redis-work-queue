@@ -1,4 +1,5 @@
-A work queue, on top of a redis database, with implementations in Python, Rust, Go, Nodejs Typescript and C#.
+A work queue, on top of a redis database, with implementations in Python, Rust, Go, Node.js
+(TypeScript) and Dotnet (C#).
 
 This is the Python implementations. For an overview of how the work queue works, it's limitations,
 and the general concepts and implementations in other languages, please read the [redis-work-queue
