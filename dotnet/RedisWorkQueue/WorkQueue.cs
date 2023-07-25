@@ -3,15 +3,46 @@ using FreeRedis;
 
 namespace RedisWorkQueue
 {
+    /// <summary>
+    /// A work queue backed by a redis database.
+    /// </summary>
     public class WorkQueue
     {
+    /// <summary>
+    /// Represents a work queue in Redis.
+    /// </summary>
+    public class WorkQueue
+    {
+        /// <summary>
+        /// Gets or sets the unique identifier for the current session.
+        /// </summary>
         public string Session { get; set; }
-        public string MainQueueKey { get; set; }
-        public string ProcessingKey { get; set; }
-        public string CleaningKey { get; set; }
-        public KeyPrefix LeaseKey { get; set; }
-        public KeyPrefix ItemDataKey { get; set; }
 
+        /// <summary>
+        /// Gets or sets the Redis key for the main queue.
+        /// </summary>
+        public string MainQueueKey { get; set; }
+
+        /// <summary>
+        /// Gets or sets the Redis key for the processing queue.
+        /// </summary>
+        public string ProcessingKey { get; set; }
+
+        /// <summary>
+        /// Gets or sets the Redis key for the cleaning queue.
+        /// </summary>
+        public string CleaningKey { get; set; }
+
+        /// <summary>
+        /// Gets or sets the Redis key prefix for lease keys.
+        /// </summary>
+        public KeyPrefix LeaseKey { get; set; }
+
+
+        /// <summary>
+        /// Creates a new instance of the WorkQueue class with based on name given name.
+        /// </summary>
+        /// <param name="name">The key prefix for the work queue.</param>
         public WorkQueue(KeyPrefix name)
         {
             this.Session = name.Of(Guid.NewGuid().ToString());
@@ -22,6 +53,11 @@ namespace RedisWorkQueue
             this.ItemDataKey = KeyPrefix.Concat(name, ":item:");
         }
 
+        /// <summary>
+        /// Adds item to the work queue.
+        /// </summary>
+        /// <param name="db">Redis instance.</param>
+        /// <param name="item">Item to be added.</param>
         public void AddItem(IRedisClient db, Item item)
         {
             using (var pipe = db.StartPipe())
@@ -33,21 +69,52 @@ namespace RedisWorkQueue
             }
         }
 
+        /// <summary>
+        /// Gets the length of the main queue.
+        /// </summary>
+        /// <param name="db">Redis instance.</param>
+        /// <returns>The length of the main queue.</returns>
         public long QueueLength(IRedisClient db)
         {
             return db.LLen(MainQueueKey);
         }
 
+        /// <summary>
+        /// Gets the length of the processing queue.
+        /// </summary>
+        /// <param name="db">Redis instance.</param>
+        /// <returns>The length of the processing queue.</returns>
         public long Processing(IRedisClient db)
         {
             return db.LLen(ProcessingKey);
         }
 
+        /// <summary>
+        /// Checks if a lease exists for the specified item ID.
+        /// </summary>
+        /// <param name="db">The Redis client instance.</param>
+        /// <param name="itemId">The ID of the item to check.</param>
+        /// <returns>True if lease exists, false otherwise.</returns>
         public bool LeaseExists(IRedisClient db, string itemId)
         {
             return db.Exists(LeaseKey.Of(itemId));
         }
 
+
+        /// <summary>
+        /// Request a work lease from the work queue. This should be called by a worker to get work to complete.
+        /// When completed, the `complete` method should be called.
+        /// If `block` is true, the function will return either when a job is leased or after `timeout` seconds if `timeout` isn't 0.
+        /// If the job is not completed before the end of `leaseDuration`, another worker may pick up the same job.
+        /// It is not a problem if a job is marked as `done` more than once.
+        ///If you haven't already, it's worth reading the documentation on leasing items:
+        /// https://github.com/MeVitae/redis-work-queue/blob/main/README.md#leasing-an-item
+        /// </summary>
+        /// <param name="db">The Redis client instance.</param>
+        /// <param name="leaseSeconds">The number of seconds to lease the item for.</param>
+        /// <param name="block">Indicates whether to block and wait for an item to be available if the main queue is empty.</param>
+        /// <param name="timeout">The maximum time to block in milliseconds.</param>
+        /// <returns>The leased item, or null if no item is available.</returns>
         public Item? Lease(IRedisClient db, int leaseSeconds, bool block, int timeout = 0)
         {
             object maybeItemId;
@@ -80,6 +147,12 @@ namespace RedisWorkQueue
             return new Item(data, itemId);
         }
 
+        /// <summary>
+        /// Marks a job as completed and remove it from the work queue.
+        /// </summary>
+        /// <param name="db">The Redis client instance.</param>
+        /// <param name="item">The item to be completed.</param>
+        /// <returns>True if the item was successfully completed and removed, otherwise false.</returns>
         public bool Complete(IRedisClient db, Item item)
         {
             var removed = db.LRem(ProcessingKey, 0, item.ID);
