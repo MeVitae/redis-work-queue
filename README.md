@@ -16,6 +16,7 @@ In addition to the primary overview below, each implementation has its own examp
 reference.
 
 - Python: [![PyPI](https://img.shields.io/pypi/v/redis-work-queue)](https://pypi.org/project/redis-work-queue/)
+  [![Docs](https://img.shields.io/badge/Docs-blue)](./python/README.md)
   [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./python/LICENSE)
 
 - Rust: [![Crates.io](https://img.shields.io/crates/v/redis-work-queue)](https://crates.io/crates/redis-work-queue)
@@ -26,7 +27,7 @@ reference.
   [![GoDoc](https://pkg.go.dev/badge/github.com/mevitae-redis-work-queue/go)](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go)
   [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-- DotNet (C#): [![Nuget](https://img.shields.io/nuget/dt/MeVitae.RedisWorkQueue)](https://www.nuget.org/packages/MeVitae.RedisWorkQueue/0.1.5)
+- DotNet (C#): [![Nuget](https://img.shields.io/nuget/v/MeVitae.RedisWorkQueue)](https://www.nuget.org/packages/MeVitae.RedisWorkQueue/0.1.5)
   [![Docs](https://img.shields.io/badge/Docs-blue)](./dotnet/RedisWorkQueue.pdf)
   [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 

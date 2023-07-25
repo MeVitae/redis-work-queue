@@ -1,9 +1,9 @@
 [package]
 name = "redis-work-queue"
-version = "0.1.3"
+version = "0.1.5"
 edition = "2021"
 license = "MIT"
-description = "A work queue, on top of a redis database, with implementations in Python, Rust, Go and C#."
+description = "A work queue, on top of a redis database, with implementations in Python, Rust, Go, Node.js (TypeScript) and Dotnet (C#)."
 homepage = "https://github.com/MeVitae/redis-work-queue/"
 repository = "https://github.com/MeVitae/redis-work-queue/"
 keywords = ["redis", "queue", "work", "cross-platform", "platform"]
