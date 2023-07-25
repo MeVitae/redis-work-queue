@@ -1,6 +1,7 @@
 # Redis Work Queue
 
-A work queue, on top of a redis database, with implementations in Python, Rust, Go, C# and TypeScript (Node.js).
+A work queue, on top of a redis database, with implementations in Python, Rust, Go, Node.js
+(TypeScript) and Dotnet (C#).
 
 This provides no method of tracking the outcome of work items. This is fairly simple to implement
 yourself (just store the result in the redis database with a key derived from the work item id). If
@@ -22,12 +23,14 @@ reference.
   [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 - Go: [![Go Report Card](https://goreportcard.com/badge/github.com/mevitae/redis-work-queue/go)](https://goreportcard.com/report/github.com/mevitae/redis-work-queue/go)
-
   [![GoDoc](https://pkg.go.dev/badge/github.com/mevitae-redis-work-queue/go)](https://pkg.go.dev/github.com/mevitae/redis-work-queue/go)
   [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-- Node.js (TypeScript): [![TypeScript Report Card](https://img.shields.io/badge/NPM-v0.0.4-red)](https://www.npmjs.com/package/@mevitae/redis-work-queue)
-  [![npm](badge)](docs)
+- DotNet (C#): [![Nuget](https://img.shields.io/nuget/dt/MeVitae.RedisWorkQueue)](https://www.nuget.org/packages/MeVitae.RedisWorkQueue/0.1.5)
+  [![Docs](https://img.shields.io/badge/Docs-blue)](./dotnet/RedisWorkQueue.pdf)
+  [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
+- Node.js (TypeScript): [![NPM](https://img.shields.io/badge/NPM-v0.0.4-red)](https://www.npmjs.com/package/@mevitae/redis-work-queue)
   [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./typescript/LICENSE)
 
 ## Overview

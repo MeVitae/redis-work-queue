@@ -7,11 +7,28 @@
     <Version>0.1.5</Version>
     <Authors>Jacob O'Toole, Nathan Lamplough, Ilie Mihai Alexandru</Authors>
     <Company>MeVitae</Company>
+    <RepositoryUrl>https://github.com/MeVitae/redis-work-queue</RepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <Description>
+      A work queue, on top of a redis database, with implementations in Python, Rust, Go, Node.js (TypeScript) and Dotnet (C#).
+
+      This is the Dotnet implementations. For an overview of how the work queue works, it's
+      limitations, and the general concepts and implementations in other languages, please read the
+      [redis-work-queue readme](https://github.com/MeVitae/redis-work-queue/blob/main/README.md).
+
+      Dotnet API docs: https://github.com/MeVitae/redis-work-queue/blob/main/dotnet/RedisWorkQueue.pdf
+    </Description>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="FreeRedis" Version="1.1.5" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="" />
+    <None Include="LICENSE" Pack="true" PackagePath="" />
   </ItemGroup>
 
 </Project>
