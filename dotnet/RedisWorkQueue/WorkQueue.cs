@@ -1,4 +1,6 @@
+using System;
 using System.Text;
+
 using FreeRedis;
 
 namespace RedisWorkQueue
@@ -16,23 +18,22 @@ namespace RedisWorkQueue
         /// <summary>
         /// Gets or sets the Redis key for the main queue.
         /// </summary>
-        public string MainQueueKey { get; set; }
+        private string MainQueueKey { get; set; }
 
         /// <summary>
         /// Gets or sets the Redis key for the processing queue.
         /// </summary>
-        public string ProcessingKey { get; set; }
+        private string ProcessingKey { get; set; }
 
         /// <summary>
-        /// Gets or sets the Redis key for the cleaning queue.
+        /// Gets or sets the key prefix for lease keys.
         /// </summary>
-        public string CleaningKey { get; set; }
+        private KeyPrefix LeaseKey { get; set; }
 
         /// <summary>
-        /// Gets or sets the Redis key prefix for lease keys.
+        /// Gets or sets the key prefix for data keys.
         /// </summary>
-        public KeyPrefix LeaseKey { get; set; }
-
+        private KeyPrefix ItemDataKey { get; set; }
 
         /// <summary>
         /// Creates a new instance of the WorkQueue class with based on name given name.
@@ -43,7 +44,6 @@ namespace RedisWorkQueue
             this.Session = name.Of(Guid.NewGuid().ToString());
             this.MainQueueKey = name.Of(":queue");
             this.ProcessingKey = name.Of(":processing");
-            this.CleaningKey = name.Of(":cleaning");
             this.LeaseKey = KeyPrefix.Concat(name, ":leased_by_session:");
             this.ItemDataKey = KeyPrefix.Concat(name, ":item:");
         }
