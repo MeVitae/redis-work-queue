@@ -1,13 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net6.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <TargetFrameworks>net6.0;net7.0</TargetFrameworks>
     <Nullable>enable</Nullable>
+    <PackageId>MeVitae.RedisWorkQueue</PackageId>
+    <Version>0.1.5</Version>
+    <Authors>Jacob O'Toole, Nathan Lamplough, Ilie Mihai Alexandru</Authors>
+    <Company>MeVitae</Company>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="FreeRedis" Version="1.0.8" />
+    <PackageReference Include="FreeRedis" Version="1.1.5" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
