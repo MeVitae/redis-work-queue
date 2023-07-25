@@ -29,15 +29,15 @@ namespace RedisWorkQueue
             return Prefix + name;
         }
 
-        /// <summary>
-        /// Concat other onto prefix and return the result as a KeyPrefix.
-        /// </summary>
-        /// <param name="prefix">An instance of the KeyPrefix class representing the prefix to concatenate.</param>
-        /// <param name="name">Name to concatenate with the prefix.</param>
-        /// <returns>A new KeyPrefix instance with the concatenated namespaced prefix.</returns>
-        public static KeyPrefix Concat(KeyPrefix prefix, string name)
-        {
-            return new KeyPrefix(prefix.Of(name));
-        }
+    /// <summary>
+    /// Concat other onto prefix and return the result as a KeyPrefix.
+    /// </summary>
+    /// <param name="prefix">An instance of the KeyPrefix class representing the prefix to concatenate.</param>
+    /// <param name="name">Name to concatenate with the prefix.</param>
+    /// <returns>A new KeyPrefix instance with the concatenated namespaced prefix.</returns>
+    public static KeyPrefix Concat(KeyPrefix prefix, string name)
+    {
+        return new KeyPrefix(prefix.Of(name));
     }
+}
 }

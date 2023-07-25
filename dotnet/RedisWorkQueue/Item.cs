@@ -30,7 +30,7 @@ namespace RedisWorkQueue
         {
             /// <summary>
             /// Gets or sets the serialized data as a byte array.
-             /// </summary>
+            /// </summary>
             byte[] byteData;
             if (Data is string)
                 byteData = Encoding.UTF8.GetBytes((string)Data);
