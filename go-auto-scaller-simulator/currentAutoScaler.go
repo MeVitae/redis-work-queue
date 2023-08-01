@@ -117,9 +117,10 @@ type Workers struct {
 	// calculator is the function to calculate scaling values.
 	calculator Calculator
 	// slowdown is the SlowDown instance for delaying and smoothing downscale.
-	slowdown      *SlowDown
-	currentUP     int
-	consecutiveUP int
+	slowdown *SlowDown
+
+	// The data which is displayed onto the graphs
+	CData *chartData
 
 	// maxFast is the maximum number of fast workers until they are converted to spot workers.
 	//
@@ -145,7 +146,6 @@ func (workers *Workers) Tick(WorkersCounts map[string]int32, joblen int32, ready
 	//	readyCounts["Base"], readyCounts["Fast"], readyCounts["Spot"],
 	//	qlen,
 	//)
-
 	newCounts := workers.calculator.Calc(counts, readyCounts, int32(qlen))
 	workers.slowdown.Push(newCounts)
 	newCounts = workers.slowdown.ScaleTo(newCounts)
@@ -153,8 +153,24 @@ func (workers *Workers) Tick(WorkersCounts map[string]int32, joblen int32, ready
 		newCounts["Spot"] += newCounts["Fast"] - workers.maxFast
 		newCounts["Fast"] = workers.maxFast
 	}
+	workers.CData.workers.Base = append(workers.CData.workers.Base, newCounts["Base"])
+	workers.CData.workers.Fast = append(workers.CData.workers.Fast, newCounts["Fast"])
+	workers.CData.workers.Spot = append(workers.CData.workers.Spot, newCounts["Spot"])
 
+	workers.CData.readyWorkers.Base = append(workers.CData.readyWorkers.Base, readyCounts["Base"])
+	workers.CData.readyWorkers.Fast = append(workers.CData.readyWorkers.Fast, readyCounts["Fast"])
+	workers.CData.readyWorkers.Spot = append(workers.CData.readyWorkers.Spot, readyCounts["Spot"])
+
+	workers.CData.jobs = append(workers.CData.jobs, qlen)
 	return newCounts
+}
+
+func (workers *Workers) addSeconds(seconds int32) {
+	workers.CData.seconds = append(workers.CData.seconds, seconds)
+}
+
+func (workers *Workers) addSecondsTotal(seconds int32) {
+	workers.CData.totalSeconds = append(workers.CData.totalSeconds, seconds)
 }
 
 // AutoScale autoscales the cluster! It autoscales two worker sets: section and person detection.

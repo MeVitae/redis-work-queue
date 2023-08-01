@@ -1,29 +1,11 @@
 package main
 
-//Person and signature detection: ~8s each (PSD)
-
-//Section detection: ~5s (SD)
-
-//Reading order: average 300ms, but it can be as high as 50 seconds in rare cases (RO)
-
-//NER: ~35s (NER)
-
-//Feature extraction: ~250ms
-
-// Page of a PDF
-
-// So each entry represents a document, each document has on average 1.8 pages.
-// And 2.3 images
-// Each image gets a job in the person and signature detection queue.
-// Each page gets a job in the section detection queue
-// After section detection, there are an average of 6.7 sections. Each section gets a job in the reading order queue.
-// After reading order, each of those jobs goes to NER, then feature extraction.
-
 import (
 	"fmt"
+
+	//	_ "net/http/pprof"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -40,35 +22,43 @@ type progress struct {
 }
 
 type SafeCounter struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	progress map[string]progress
 }
 
+var maxNumberOfJobs = 10000
+
 var docsNeedToBeDone = SafeCounter{progress: make(map[string]progress)}
 
-func createNewDocToProcess(chanel chan incomingJob, chanelSD chan incomingJob) {
-	go func() {
-		doc := document{
-			pages:  generateRandomNumber(1, 3),
-			images: generateRandomNumber(1, 4),
-			id:     uuid.New().String(),
-		}
-		docsNeedToBeDone.mu.Lock()
-		// Lock so only one goroutine at a time can access the map c.v.
-		docsNeedToBeDone.progress[doc.id] = progress{}
+func createNewDocToProcess(chanel map[string]deploymentStruct) {
+	docsNeedToBeDone.mu.RLock()
+	if len(docsNeedToBeDone.progress) > maxNumberOfJobs {
+		docsNeedToBeDone.mu.RUnlock()
+		return
+	}
+	docsNeedToBeDone.mu.RUnlock()
+	doc := document{
+		pages:  generateRandomNumber(1, 3),
+		images: 0,
+		id:     uuid.New().String(),
+	}
+	if generateRandomBool(1, 4) {
+		doc.images = generateRandomNumber(1, 24)
+	}
 
-		docsNeedToBeDone.mu.Unlock()
+	// Lock so only one goroutine at a time can access the map c.v.
+	docsNeedToBeDone.mu.Lock()
+	docsNeedToBeDone.progress[doc.id] = progress{}
+	docsNeedToBeDone.mu.Unlock()
+	for i := 0; i < doc.images; i++ {
+		chanel["person"].jobChan <- incomingJob{name: "PSD", time: 0, startAt: tick, myData: doc}
+	}
+	for i := 0; i < doc.pages; i++ {
+		chanel["signature"].jobChan <- incomingJob{name: "SD", time: 0, startAt: tick, myData: doc}
+		chanel["section"].jobChan <- incomingJob{name: "SD", time: 0, startAt: tick, myData: doc}
 
-		for i := 0; i < doc.images; i++ {
-			chanel <- incomingJob{name: "PSD", time: 0, startAt: tick, myData: doc}
-		}
-		for i := 0; i < doc.pages; i++ {
-			chanelSD <- incomingJob{name: "SD", time: 0, startAt: tick, myData: doc}
-		}
-		//fmt.Println("job")
-		//	fmt.Println(doc.images, "-")
-		//fmt.Println(docsNeedToBeDone[jobID.myData.id].done)
-	}()
+	}
+
 }
 
 //  1000 ticks == 1 second
@@ -88,20 +78,16 @@ type job struct {
 	myTicks     int
 	jobType     string
 	MyData      document
+	startAt     int32
 }
 
-type pod struct {
-	workers []worker
-	jobs    map[string]job
-	podType string
-}
+// TODO: rename to deployment
 
 type incomingJob struct {
 	time    int
 	name    string
 	startAt int
 	myData  document
-	isTick  bool
 }
 
 type PowerRange struct {
@@ -133,6 +119,18 @@ var Config = map[string]JobConfig{
 	"NER": {
 		PowerNeededRange: [2]int{300, 400},
 	},
+	"PREProcessor": {
+		PowerNeededRange: [2]int{100, 140},
+	},
+	"SGD": {
+		PowerNeededRange: [2]int{60, 100},
+	},
+	"SC": {
+		PowerNeededRange: [2]int{8, 40},
+	},
+	"FE": {
+		PowerNeededRange: [2]int{1, 4},
+	},
 }
 
 var ConfigWorker = map[string]workerConfig{
@@ -143,12 +141,12 @@ var ConfigWorker = map[string]workerConfig{
 	},
 	"Spot": {
 		timetilDieRange: [2]int{130000, 290000},
-		timeTilStart:    [2]int{2200, 2400},
+		timeTilStart:    [2]int{900, 1400},
 		price:           0.15,
 	},
 	"Fast": {
 		timetilDieRange: [2]int{-1, -1},
-		timeTilStart:    [2]int{2200, 2400},
+		timeTilStart:    [2]int{900, 1400},
 		price:           1.2,
 	},
 }
@@ -158,10 +156,8 @@ type workersCount struct {
 }
 
 var tick = 1
-var dn = 0
-var hvtobedone = 0
 
-func getWorkers(pod pod) (realWorkers map[string]int32, totalWorkers map[string]int32) {
+func getWorkers(pod deploymentStruct) (realWorkers map[string]int32, totalWorkers map[string]int32) {
 	realWorkers = make(map[string]int32)
 	totalWorkers = make(map[string]int32)
 	realWorkers["Base"] = 0
@@ -180,264 +176,300 @@ func getWorkers(pod pod) (realWorkers map[string]int32, totalWorkers map[string]
 	return
 }
 
-func podF(name string, incomingJobChan chan incomingJob, finishjob chan job, inctick chan bool) {
-	Pod := pod{
-		workers: []worker{},
-		jobs:    make(map[string]job),
-		podType: name,
-	}
+func receiveJobs(Pod *deploymentStruct, incomingJobChan chan incomingJob, name string) {
+	for jobID := range incomingJobChan {
+		uuid := uuid.New()
+		Pod.mu.Lock()
+		Pod.jobs[uuid.String()] = job{
+			startedAt:   jobID.startAt,
+			powerNeeded: generateRandomNumber(Config[name].PowerNeededRange[0], Config[name].PowerNeededRange[1]),
+			taken:       false,
+			myTicks:     jobID.time,
+			jobType:     name,
+			MyData:      jobID.myData,
+			startAt:     int32(tick),
+		}
+		Pod.mu.Unlock()
 
+		docsNeedToBeDone.mu.Lock()
+		doc := docsNeedToBeDone.progress[jobID.myData.id]
+		doc.haveToBeDone += 1
+		docsNeedToBeDone.progress[jobID.myData.id] = doc
+		docsNeedToBeDone.mu.Unlock()
+	}
+}
+
+var hardcCodedLimits = make(map[string]int32)
+
+func Deployment(deployment *deploymentStruct, finishjob chan job, calcConfig CalculatorY) {
+	myStats := statsStruct{}
 	workers := Workers{
 		baseName: "base",
 		fastName: "fast",
 		spotName: "spot",
 		queue:    &map[string]int32{},
 		calculator: Calculator{
-			Target:     50,
-			SpotTarget: 50,
-			Run:        50,
-			Spinup:     120,
+			Target:     int32(calcConfig.Target),
+			SpotTarget: int32(calcConfig.SpotTarget),
+			Run:        int32(calcConfig.Run),
+			Spinup:     int32(calcConfig.Spinup),
 		},
-		currentSlowDown:     0,
-		consecutiveSlowDown: 50,
-		currentUP:           0,
-		consecutiveUP:       15,
-		slowdown:            NewSlowDown(15),
-		maxFast:             1500,
+		CData:    startPlotGraph(deployment.podType),
+		slowdown: NewSlowDown(8),
+		maxFast:  96,
 	}
 
 	toDropWorkers := make(map[string]int32)
+
+	go receiveJobs(deployment, deployment.jobChan, deployment.podType)
 	//Pod.workers = append(Pod.workers, worker{timetilDie: -1, power: 1, workingon: "", timeTilStart: 140000})
-	for {
-		select {
-		case jobID, ok := <-incomingJobChan:
+	fmt.Println(deployment.podType, "is ready")
+	for tick := range deployment.tickChan {
+		deployment.mu.Lock()
 
-			if !ok {
-				// incomingJobChan is closed, exit the goroutine
-				fmt.Println("tickclosed")
-				break
-			}
-			if !jobID.isTick {
-			}
-			uuid := uuid.New()
+		if tick%500 == 0 {
 
-			Pod.jobs[uuid.String()] = job{
-				startedAt:   jobID.startAt,
-				powerNeeded: generateRandomNumber(Config[name].PowerNeededRange[0], Config[name].PowerNeededRange[1]),
-				taken:       false,
-				myTicks:     jobID.time,
-				jobType:     name,
-				MyData:      jobID.myData,
-			}
-			dn += 1
-			docsNeedToBeDone.mu.Lock()
+			//		fmt.Println(Pod)
+			realWorkers := make(map[string]int32)
+			totalWorkers := make(map[string]int32)
+			totalWorkers2 := make(map[string]int32)
+			realWorkers["Base"] = 0
+			realWorkers["Spot"] = 0
+			realWorkers["Fast"] = 0
 
-			mdoc := docsNeedToBeDone.progress[jobID.myData.id]
-			mdoc.haveToBeDone += 1
-			docsNeedToBeDone.progress[jobID.myData.id] = mdoc
+			totalWorkers["Base"] = 0
+			totalWorkers["Spot"] = 0
+			totalWorkers["Fast"] = 0
 
-			docsNeedToBeDone.mu.Unlock()
+			totalWorkers2["Base"] = 0
+			totalWorkers2["Spot"] = 0
+			totalWorkers2["Fast"] = 0
 
-		case ticking, ok := <-inctick:
-			if !ok {
-				// incomingJobChan is closed, exit the goroutine
-				fmt.Println("tickclosed")
-				break
-			}
-			if ticking {
+			toDropWorkers["Base"] = 0
+			toDropWorkers["Spot"] = 0
+			toDropWorkers["Fast"] = 0
 
-				if tick%50 == 0 {
-					//		fmt.Println(Pod)
-					realWorkers := make(map[string]int32)
-					totalWorkers := make(map[string]int32)
-					totalWorkers2 := make(map[string]int32)
-					realWorkers["Base"] = 0
-					realWorkers["Spot"] = 0
-					realWorkers["Fast"] = 0
+			Pworkers := deployment.workers
 
-					totalWorkers["Base"] = 0
-					totalWorkers["Spot"] = 0
-					totalWorkers["Fast"] = 0
-
-					totalWorkers2["Base"] = 0
-					totalWorkers2["Spot"] = 0
-					totalWorkers2["Fast"] = 0
-
-					toDropWorkers["Base"] = 0
-					toDropWorkers["Spot"] = 0
-					toDropWorkers["Fast"] = 0
-
-					for _, worker := range Pod.workers {
-						if worker.timeTilStart == 0 {
-							realWorkers[worker.wtype]++
-						}
-						totalWorkers[worker.wtype]++
-						totalWorkers2[worker.wtype]++
-					}
-					newc := workers.Tick(totalWorkers, int32(len(Pod.jobs)), realWorkers)
-
-					for name, workers := range newc {
-
-						//fmt.Println("Pod Workers", Pod.workers)
-						//fmt.Println("New workers:", workers, "Acctual workers:", totalWorkers2[name])
-						if workers > totalWorkers2[name] {
-							DiffenceInWorkers := workers - totalWorkers2[name]
-							//	fmt.Println("Creating ", DiffenceInWorkers, " workers of type", name)
-
-							for i := int32(1); i <= DiffenceInWorkers; i++ {
-
-								Pod.workers = append(Pod.workers, worker{timetilDie: generateRandomNumber(ConfigWorker[name].timetilDieRange[0], ConfigWorker[name].timetilDieRange[1]), power: 1, workingon: "", timeTilStart: generateRandomNumber(ConfigWorker[name].timeTilStart[0], ConfigWorker[name].timeTilStart[1]), wtype: name})
-								//fmt.Println(Pod.workers)
-							}
-						} else if workers < totalWorkers2[name] {
-							// dropping extra workers
-							numberOfDrops := totalWorkers[name] - workers
-							toDropWorkers[name] = numberOfDrops
-
-							//		fmt.Println("Have to drop", toDropWorkers, name, "workers")
-						}
-					}
-					writeToFile("workers"+name, strconv.Itoa(len(Pod.workers)))
-					writeToFile("readyworkers"+name, strconv.Itoa(int(totalWorkers2["Fast"]+totalWorkers2["Base"]+totalWorkers2["Spot"])))
-					writeToFile("jobs"+name, strconv.Itoa(len(Pod.jobs)))
+			for _, worker := range Pworkers {
+				if worker.timeTilStart == 0 {
+					realWorkers[worker.wtype]++
 				}
+				totalWorkers[worker.wtype]++
+				totalWorkers2[worker.wtype]++
+			}
+			newc := workers.Tick(totalWorkers, int32(len(deployment.jobs)), realWorkers)
+			//	fmt.Println(newc, deployment.podType)
+			for name, workers := range newc {
 
-				for id, job := range Pod.jobs {
-					job.myTicks += 1
-					Pod.jobs[id] = job
-				}
+				//fmt.Println("Pod Workers", Pod.workers)
+				//fmt.Println("New workers:", workers, "Acctual workers:", totalWorkers2[name])
+				if workers > totalWorkers2[name] {
+					DiffenceInWorkers := workers - totalWorkers2[name]
+					//	fmt.Println("Creating ", DiffenceInWorkers, " workers of type", name)
 
-				for Wid, worker := range Pod.workers {
-					//	fmt.Println(worker.timeTilStart)
-					if toDropWorkers[worker.wtype] > 0 && worker.workingon == "" {
-						if Wid >= 0 && Wid < len(Pod.workers) {
-							Pod.workers = append(Pod.workers[:Wid], Pod.workers[Wid+1:]...)
-						}
-						continue
+					for i := int32(1); i <= DiffenceInWorkers; i++ {
+
+						deployment.workers = append(deployment.workers, worker{timetilDie: generateRandomNumber(ConfigWorker[name].timetilDieRange[0], ConfigWorker[name].timetilDieRange[1]), power: 1, workingon: "", timeTilStart: generateRandomNumber(ConfigWorker[name].timeTilStart[0], ConfigWorker[name].timeTilStart[1]), wtype: name})
+						//fmt.Println(Pod.workers)
 					}
+				} else if workers < totalWorkers2[name] {
+					// dropping extra workers
 
-					if worker.timeTilStart > 0 {
-						worker.timeTilStart -= 1
-						//fmt.Println(worker.timeTilStart)
-						Pod.workers[Wid] = worker
-					} else if worker.workingon == "" {
-
-						for id, job := range Pod.jobs {
-							if !job.taken {
-								job.taken = true
-								Pod.jobs[id] = job
-								Pod.workers[Wid].workingon = id
-								break
-							}
-						}
-
-					} else {
-						myjob := Pod.jobs[worker.workingon]
-						if myjob.powerNeeded%100 == 0 {
-							//fmt.Println(myjob.powerNeeded)
-						}
-						if myjob.powerNeeded > 0 {
-							myjob.powerNeeded -= worker.power
-							Pod.jobs[worker.workingon] = myjob
-						} else {
-
-							docsNeedToBeDone.mu.Lock()
-
-							mdoc := docsNeedToBeDone.progress[myjob.MyData.id]
-							mdoc.done += 1
-							docsNeedToBeDone.progress[myjob.MyData.id] = mdoc
-							finishjob <- Pod.jobs[worker.workingon]
-							delete(Pod.jobs, worker.workingon)
-							Pod.workers[Wid].workingon = ""
-
-							docsNeedToBeDone.mu.Unlock()
-						}
+					numberOfDrops := totalWorkers2[name] - workers
+					toDropWorkers[name] = numberOfDrops
+					if numberOfDrops > 0 {
+						//	fmt.Println("Have to drop", totalWorkers2[name], name, "workers", deployment.podType)
 					}
 				}
+			}
+			newW := []worker{}
 
+			for _, worker := range deployment.workers {
+				if worker.workingon == "" && toDropWorkers[worker.wtype] > 0 {
+					toDropWorkers[worker.wtype] -= 1
+				} else {
+					newW = append(newW, worker)
+				}
+			}
+			deployment.workers = newW
+			stats.mu.RLock()
+
+			meantime := -1
+
+			if myStats.jobsDone != 0 && myStats.jobsDone != 0 {
+				meantime = myStats.seconds/myStats.jobsDone + 1
+				workers.CData.ticks = append(workers.CData.ticks, int32(tick/10))
+				workers.addSeconds(int32(meantime))
+				myStats.jobsDone = 0
+				myStats.seconds = 0
 			}
 
-		default:
+			meantimeTotal := -1
+			if stats.jobsDone != 0 && stats.jobsDone != 0 {
+				meantimeTotal = stats.seconds/stats.jobsDone + 1
+				workers.addSecondsTotal(int32(meantimeTotal))
+			}
+			stats.mu.RUnlock()
+			if tick%1500 == 0 {
+				fmt.Println("View: ", ":8081/", deployment.podType, "| number of jobs:", strconv.Itoa(len(deployment.jobs)), "| number of workers:", len(deployment.workers), "| deployment:", deployment.podType, "| job done mean time overall:", meantime)
+			}
 		}
 
+		for id, job := range deployment.jobs {
+			job.myTicks += 1
+			deployment.jobs[id] = job
+		}
+		for Wid, worker := range deployment.workers {
+
+			if worker.timeTilStart > 0 {
+				worker.timeTilStart -= 1
+				//fmt.Println(worker.timeTilStart)
+				deployment.workers[Wid] = worker
+			} else if worker.workingon == "" {
+
+				for id, job := range deployment.jobs {
+					if !job.taken {
+						job.taken = true
+						deployment.jobs[id] = job
+						deployment.workers[Wid].workingon = id
+						break
+					}
+				}
+
+			} else {
+				myjob := deployment.jobs[worker.workingon]
+				if myjob.powerNeeded%100 == 0 {
+					//fmt.Println(myjob.powerNeeded)
+				}
+				if myjob.powerNeeded > 0 {
+					myjob.powerNeeded -= worker.power
+					deployment.jobs[worker.workingon] = myjob
+				} else {
+					//fmt.Println("finish")
+
+					docsNeedToBeDone.mu.Lock()
+					doc := docsNeedToBeDone.progress[myjob.MyData.id]
+					doc.done += 1
+					myStats.jobsDone++
+					myStats.seconds += tick/10 - deployment.jobs[worker.workingon].startedAt/10
+					docsNeedToBeDone.progress[myjob.MyData.id] = doc
+					docsNeedToBeDone.mu.Unlock()
+					//")
+
+					//	fmt.Println(nameP)
+					finishjob <- deployment.jobs[worker.workingon]
+					delete(deployment.jobs, worker.workingon)
+					deployment.workers[Wid].workingon = ""
+				}
+			}
+		}
+		deployment.mu.Unlock()
 	}
 }
 
+type deploymentStruct struct {
+	mu       sync.RWMutex
+	workers  []worker
+	jobs     map[string]job
+	podType  string
+	jobChan  chan incomingJob
+	tickChan chan int
+}
+
+func makeDepoloyment(name string, incomingJobCh *commingJobs) (deployment *deploymentStruct) {
+	deployment = &deploymentStruct{
+		workers:  []worker{},
+		jobs:     make(map[string]job),
+		podType:  name,
+		jobChan:  make(chan incomingJob, 64000),
+		tickChan: make(chan int, 1), // change buffer size to change the allowed number of tick desyncs
+	}
+
+	incomingJobCh.mu.Lock()
+	incomingJobCh.JChan[name] = *deployment
+	incomingJobCh.mu.Unlock()
+	return
+}
+
+type commingJobs struct {
+	mu    sync.Mutex
+	JChan map[string]deploymentStruct
+}
+
 func main() {
-	go startPlotGraph()
-	incomingJobPSD := make(chan incomingJob, 32000)
-	incomingJobSD := make(chan incomingJob, 32000)
-	incomingJobRO := make(chan incomingJob, 32000)
-	incomingJobNER := make(chan incomingJob, 32000)
+	config := readYaml()
 
-	ticking1 := make(chan bool, 16000)
-	ticking2 := make(chan bool, 16000)
-	ticking3 := make(chan bool, 16000)
-	ticking4 := make(chan bool, 16000)
-	jobFinish := make(chan job, 16000)
+	hardcCodedLimits["Base"] = 1599
+	hardcCodedLimits["Spot"] = 1599
+	hardcCodedLimits["Fast"] = 1599
 
-	go podF("PSD", incomingJobPSD, jobFinish, ticking1)
-	go podF("SD", incomingJobSD, jobFinish, ticking2)
-	go podF("RO", incomingJobRO, jobFinish, ticking3)
-	go podF("NER", incomingJobNER, jobFinish, ticking4)
+	// Person and signature detection (TODO: split up)
+	incommingChans := commingJobs{
+		JChan: make(map[string]deploymentStruct),
+	}
+
+	jobFinish := make(chan job)
+	for index, _ := range config {
+		fmt.Println(index)
+		go Deployment(makeDepoloyment(index, &incommingChans), jobFinish, config[index].CalculatorY)
+	}
+
 	tikTimingJobs := getTickJobTimings()
 	//go createNewDocToProcess(incomingJobPSD, incomingJobSD)
-	jobsDone := 0
-	seconds := 0
+
+	go jobFinishF(jobFinish, incommingChans, config)
 	for {
 
 		if tikTimingJobs.tickTime[strconv.Itoa(tick)] {
-			go createNewDocToProcess(incomingJobPSD, incomingJobSD)
-
+			incommingChans.mu.Lock()
+			createNewDocToProcess(incommingChans.JChan)
+			incommingChans.mu.Unlock()
 		}
 		tick++
 		//fmt.Println("1")
-		ticking1 <- true
-		//fmt.Println("2")
-		ticking2 <- true
-		//fmt.Println("3")
-		ticking3 <- true
-		//fmt.Println("4")
-		ticking4 <- true
-		//fmt.Println("5")
-		time.Sleep(5000 * time.Microsecond)
-
-		select {
-		case job := <-jobFinish:
-			//fmt.Println(job)
-			if job.jobType == "PSD" {
-				incomingJobRO <- incomingJob{name: "RO", time: job.myTicks, startAt: job.startedAt, myData: job.MyData}
-				//fmt.Println("Createro")
-				//fmt.Println("job PSD", job.myTicks/100, job.startedAt/100)
-			} else if job.jobType == "SD" {
-				//fmt.Println("Createro")
-				incomingJobRO <- incomingJob{name: "RO", time: job.myTicks, startAt: job.startedAt, myData: job.MyData}
-				incomingJobRO <- incomingJob{name: "RO", time: job.myTicks, startAt: job.startedAt, myData: job.MyData}
-				incomingJobRO <- incomingJob{name: "RO", time: job.myTicks, startAt: job.startedAt, myData: job.MyData}
-				incomingJobRO <- incomingJob{name: "RO", time: job.myTicks, startAt: job.startedAt, myData: job.MyData}
-				incomingJobRO <- incomingJob{name: "RO", time: job.myTicks, startAt: job.startedAt, myData: job.MyData}
-				incomingJobRO <- incomingJob{name: "RO", time: job.myTicks, startAt: job.startedAt, myData: job.MyData}
-			} else if job.jobType == "RO" {
-				incomingJobNER <- incomingJob{name: "NER", time: job.myTicks, startAt: job.startedAt, myData: job.MyData}
-			} else if job.jobType == "NER" {
-				//fmt.Println(dn, "dn", docsNeedToBeDone.progress[job.MyData.id])
-				if docsNeedToBeDone.progress[job.MyData.id].done == docsNeedToBeDone.progress[job.MyData.id].haveToBeDone {
-					fmt.Println("job job finished:", tick/100-job.startedAt/100, "Seconds")
-					seconds += tick/100 - job.startedAt/100
-					jobsDone++
-				}
-			}
-		default:
-
+		for jname, _ := range incommingChans.JChan {
+			incommingChans.JChan[jname].tickChan <- tick
 		}
-		if tick%50 == 0 {
-			if jobsDone > 1 {
-				writeToFile("tickC", strconv.Itoa(tick))
-				writeToFile("SecondsToComplete", strconv.Itoa(seconds/jobsDone))
-			}
-			writeToFile("tick", strconv.Itoa(tick))
-			jobsDone = 0
-			seconds = 0
+
+		if tick%35000 == 0 {
+			stats.mu.Lock()
+			stats.jobsDone = 0
+			stats.seconds = 0
+			stats.mu.Unlock()
 		}
+	}
+}
+
+type statsStruct struct {
+	mu       sync.RWMutex
+	seconds  int
+	jobsDone int
+}
+
+var stats = statsStruct{}
+
+func jobFinishF(jobFinish chan job, incommingJobsChann commingJobs, config MainStruct) {
+	for job := range jobFinish {
+		incommingJobsChann.mu.Lock()
+		incommingJobsChan := incommingJobsChann.JChan
+
+		if config[job.jobType].ScalerSim.NextStage == "Finish" {
+
+			docsNeedToBeDone.mu.RLock()
+			if docsNeedToBeDone.progress[job.MyData.id].done == docsNeedToBeDone.progress[job.MyData.id].haveToBeDone {
+				delete(docsNeedToBeDone.progress, job.MyData.id)
+				stats.mu.Lock()
+				stats.seconds += tick/10 - job.startedAt/10
+				stats.jobsDone++
+				stats.mu.Unlock()
+			}
+			docsNeedToBeDone.mu.RUnlock()
+		} else {
+			//	fmt.Println(incommingJobsChan[config[job.jobType].ScalerSim.NextStage])
+			incommingJobsChan[config[job.jobType].ScalerSim.NextStage].jobChan <- incomingJob{name: config[job.jobType].ScalerSim.NextStage, time: job.myTicks, startAt: job.startedAt, myData: job.MyData}
+		}
+		incommingJobsChann.JChan = incommingJobsChan
+		incommingJobsChann.mu.Unlock()
 	}
 }

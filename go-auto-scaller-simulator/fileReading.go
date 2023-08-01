@@ -39,7 +39,7 @@ func getTickJobTimings() jobTimings {
 		tikTimingJobs.tickTime[line] = true
 	}
 
-	for i := 0; i < 100000; i++ {
+	for i := 0; i < 1000; i++ {
 		num1 := generateRandomNumber(0, 12000)
 		//fmt.Println(num1)
 		num2 := generateRandomNumber(num1, 12000)

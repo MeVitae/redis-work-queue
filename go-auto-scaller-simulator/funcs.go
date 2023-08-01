@@ -6,23 +6,20 @@ import (
 	"math/rand"
 	"os"
 	"strings"
-	"time"
 )
 
-func generateRandomNumber(min, max int) int {
-	rand.Seed(time.Now().UnixNano())
+func generateRandomBool(a, b int) bool {
+	return rand.Intn(b) < a
+}
 
+func generateRandomNumber(min, max int) int {
 	return min + rand.Intn(max-min+1)
 }
 func generateRandomFloat(min, max float32) float32 {
-	rand.Seed(time.Now().UnixNano())
-	result := min + rand.Float32()*(max-min)
-	return result
+	return min + rand.Float32()*(max-min)
 }
 func generateRandomFloat64(min, max float64) float64 {
-	rand.Seed(time.Now().UnixNano())
-	result := min + rand.Float64()*(max-min)
-	return result
+	return min + rand.Float64()*(max-min)
 }
 
 func getMeanTime(numbers []int) float64 {
