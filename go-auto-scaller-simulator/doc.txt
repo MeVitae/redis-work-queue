@@ -25,3 +25,5 @@
 // Each page gets a job in the section detection queue
 // After section detection, there are an average of 6.7 sections. Each section gets a job in the reading order queue.
 // After reading order, each of those jobs goes to NER, then feature extraction.
+
+// {AUTOSCALER} 10 ticks == 1 second

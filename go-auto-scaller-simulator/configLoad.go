@@ -8,11 +8,11 @@ import (
 )
 
 type Worker struct {
-	NewWorkers `yaml:"NewWorkers"`
-	ScalerSim  `yaml:"ScalerSim"`
+	NewWorkersY `yaml:"NewWorkers"`
+	ScalerSim   `yaml:"ScalerSim"`
 }
 
-type NewWorkers struct {
+type NewWorkersY struct {
 	AppsV1Deployments string `yaml:"appsV1Deployments"`
 	Name              string `yaml:"name"`
 	Db                string `yaml:"db"`
@@ -20,10 +20,6 @@ type NewWorkers struct {
 	Processing        string `yaml:"processing"`
 	CalculatorY       `yaml:"Calculator"`
 	Value             int `yaml:"value"`
-}
-type WorkerY struct {
-	NewWorkers `yaml:"NewWorkers"`
-	ScalerSim  `yaml:"ScalerSim"`
 }
 
 type MainStruct map[string]Worker
@@ -43,9 +39,7 @@ type ScalerSim struct {
 
 func readYaml() MainStruct {
 	data, _ := ioutil.ReadFile("config.yaml")
-
 	var result MainStruct
-
 	err := yaml.Unmarshal([]byte(data), &result)
 	if err != nil {
 		log.Fatalln(err)

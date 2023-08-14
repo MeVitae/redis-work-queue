@@ -39,17 +39,13 @@ func getTickJobTimings() jobTimings {
 		tikTimingJobs.tickTime[line] = true
 	}
 
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 10000; i++ {
 		num1 := generateRandomNumber(0, 12000)
-		//fmt.Println(num1)
 		num2 := generateRandomNumber(num1, 12000)
-		//fmt.Println(num2)
 		for i := num1; i < num2; i++ {
 			currentTick++
 			_, exists := tikTimingJobs.tickTime[strconv.Itoa(i)]
-			//fmt.Println(exists)
 			if exists {
-				//fmt.Println(value, "=")
 				RealtikTimingJobs.tickTime[strconv.Itoa(currentTick)] = true
 			}
 		}

@@ -2,28 +2,28 @@ package main
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/go-echarts/go-echarts/v2/charts"
 	"github.com/go-echarts/go-echarts/v2/opts"
 	"github.com/go-echarts/go-echarts/v2/types"
 )
 
-var jobs = make([]string, 0)
-
-type ChartWorkers struct {
-	Fast []int32
-	Base []int32
-	Spot []int32
+type CharDisplayConfing struct {
+	showAllData              bool
+	showLastNumberOfElements int32
 }
 
 type chartData struct {
+	mu           sync.RWMutex
 	seconds      []int32
 	ticks        []int32
 	jobs         []int32
-	readyWorkers ChartWorkers
-	workers      ChartWorkers
+	readyWorkers []int32
+	workers      []int32
 	name         string
 	totalSeconds []int32
+	config       CharDisplayConfing
 }
 
 func httpserver(w http.ResponseWriter, _ *http.Request, Cdata *chartData) {
@@ -35,40 +35,36 @@ func httpserver(w http.ResponseWriter, _ *http.Request, Cdata *chartData) {
 			Title: "Jobs done time",
 		}))
 
-	Jobs_Seconds.SetXAxis(convertToIntSlice(Cdata.ticks)).
-		AddSeries("Number of jobs", convertToIntSlice(Cdata.jobs)).
-		AddSeries("Seconds Taken", convertToIntSlice(Cdata.seconds)).
-		//AddSeries("Jobs Queue", GetFileDataFromSavedData("JobsQueue")).
+	Jobs_Seconds.SetXAxis(Cdata.convertToIntSlice(Cdata.ticks)).
+		AddSeries("Seconds Taken "+Cdata.name, Cdata.convertToIntSlice(Cdata.seconds)).
+		AddSeries("Total Seconds taken", Cdata.convertToIntSlice(Cdata.totalSeconds)).
 		SetSeriesOptions(charts.WithLineChartOpts(opts.LineChart{Smooth: false}))
-	RWorkers := charts.NewLine()
-	RWorkers.SetXAxis(convertToIntSlice(Cdata.ticks)).
-		AddSeries("Ready Base workers", convertToIntSlice(Cdata.readyWorkers.Base)).
-		AddSeries("Ready Fast workers", convertToIntSlice(Cdata.readyWorkers.Fast)).
-		AddSeries("Ready Spot workers", convertToIntSlice(Cdata.readyWorkers.Spot)).
-		//AddSeries("Jobs Queue", GetFileDataFromSavedData("JobsQueue")).
-		SetSeriesOptions(charts.WithLineChartOpts(opts.LineChart{Smooth: false}))
-
 	Workers := charts.NewLine()
-	Workers.SetXAxis(convertToIntSlice(Cdata.ticks)).
-		AddSeries("Base workers", convertToIntSlice(Cdata.workers.Base)).
-		AddSeries("Fast workers", convertToIntSlice(Cdata.workers.Fast)).
-		AddSeries("Spot workers", convertToIntSlice(Cdata.workers.Spot)).
+	Workers.SetXAxis(Cdata.convertToIntSlice(Cdata.ticks)).
+		AddSeries("Workers", Cdata.convertToIntSlice(Cdata.workers)).
+		AddSeries("Ready Workers", Cdata.convertToIntSlice(Cdata.readyWorkers)).
+
 		//AddSeries("Jobs Queue", GetFileDataFromSavedData("JobsQueue")).
 		SetSeriesOptions(charts.WithLineChartOpts(opts.LineChart{Smooth: false}))
 
 	TotalTime := charts.NewLine()
-	TotalTime.SetXAxis(convertToIntSlice(Cdata.ticks)).
-		AddSeries("Total Seconds", convertToIntSlice(Cdata.totalSeconds)).
-		//AddSeries("Jobs Queue", GetFileDataFromSavedData("JobsQueue")).
+	TotalTime.SetXAxis(Cdata.convertToIntSlice(Cdata.ticks)).
+		//AddSeries("Total Seconds", convertToIntSlice(Cdata.totalSeconds)).
+		AddSeries("Number of jobs "+Cdata.name, Cdata.convertToIntSlice(Cdata.jobs)).
 		SetSeriesOptions(charts.WithLineChartOpts(opts.LineChart{Smooth: false}))
 	TotalTime.Render(w)
 	Workers.Render(w)
 	Jobs_Seconds.Render(w)
-	RWorkers.Render(w)
 }
 
 func startPlotGraph(name string) *chartData {
-	Cdata := chartData{}
+	Cdata := chartData{
+		name: name,
+		config: CharDisplayConfing{
+			showAllData:              false,
+			showLastNumberOfElements: 1000,
+		},
+	}
 	go http.HandleFunc("/"+name, func(w http.ResponseWriter, r *http.Request) {
 		httpserver(w, r, &Cdata)
 	})
@@ -76,15 +72,13 @@ func startPlotGraph(name string) *chartData {
 	return &Cdata
 }
 
-func convertToIntSlice(data []int32) []opts.LineData {
-	// Calculate the number of elements to use (either the last 5000 or the full length if it's less than 5000).
+func (Cdata *chartData) convertToIntSlice(data []int32) []opts.LineData {
 	numElements := len(data)
-	if numElements > 100 {
-		numElements = 100
+	if Cdata.config.showAllData == false && numElements > int(Cdata.config.showLastNumberOfElements) {
+		numElements = int(Cdata.config.showLastNumberOfElements)
 	}
 
 	lineDataSlice := make([]opts.LineData, numElements)
-	// Start from the last 5000 elements and populate the lineDataSlice in reverse order.
 	for i := 0; i < numElements; i++ {
 		index := len(data) - numElements + i
 		lineDataSlice[i] = opts.LineData{Value: data[index]}

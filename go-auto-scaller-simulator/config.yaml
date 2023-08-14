@@ -12,7 +12,7 @@ person:
       Spinup: 160
     value: 12
   ScalerSim:
-    PowerNeededMin: [70,90]
+    PowerNeededMin: [60,100]
     NextStage: "reading"
     numberToSpawn:  1
 signature:
@@ -46,7 +46,7 @@ section:
       Spinup: 160
     value: 12
   ScalerSim:
-    PowerNeededMin: [8,40]
+    PowerNeededMin: [60,100]
     NextStage: "reading"
     numberToSpawn:  1
 reading:
@@ -97,7 +97,7 @@ sectionClass:
       Spinup: 160
     value: 24
   ScalerSim:
-    PowerNeededMin: [300,400]
+    PowerNeededMin: [100,300]
     NextStage: "ner"
     numberToSpawn:  1
 featureExtraction:
