@@ -12,9 +12,24 @@ namespace RedisWorkQueue
     public class Item
     {
         /// <summary>
-        /// Gets or sets the serialized data as a byte array.
+        /// Gets or sets the data as a byte array.
         /// </summary>
         public byte[] Data { get; set; }
+
+        /// <summary>
+        /// Gets or sets the data as a (UTF-8) string.
+        /// </summary>
+        public string StringData
+        {
+            get
+            {
+                return Encoding.UTF8.GetString(Data);
+            }
+            set
+            {
+                Data = Encoding.UTF8.GetBytes(value);
+            }
+        }
 
         /// <summary>
         /// Gets or sets the ID of the item.
@@ -24,41 +39,22 @@ namespace RedisWorkQueue
         /// <summary>
         /// Creates a new instance of the Item class with the specified data and ID.
         /// </summary>
-        /// <param name="data">The data to be serialized and stored in the item.</param>
+        /// <param name="data">The data to be stored in the item.</param>
         /// <param name="id">An optional ID to uniquely identify the item. If not provided, a new GUID will be generated.</param>
-        public Item(object Data, string? ID = null)
+        public Item(byte[] data, string? id = null)
         {
-            /// <summary>
-            /// Gets or sets the serialized data as a byte array.
-            /// </summary>
-            byte[] byteData;
-            if (Data is string)
-                byteData = Encoding.UTF8.GetBytes((string)Data);
-            else if (!(Data is byte[]))
-            {
-                BinaryFormatter bf = new BinaryFormatter();
-                using (var ms = new MemoryStream())
-                {
-                    //as long as we have full control over and know what the data is then this is okay 
-#pragma warning disable SYSLIB0011
-                    bf.Serialize(ms, Data);
-#pragma warning restore SYSLIB0011
-                    byteData = ms.ToArray();
-                }
-            }
-            else
-                byteData = (byte[])Data;
-
-            if (ID == null) ID = Guid.NewGuid().ToString();
-
-            if (byteData == null)
-                throw new Exception("item failed to serialise data to byte[]");
-            this.Data = byteData;
-            if (ID == null)
-                throw new Exception("item failed to create ID");
-
-            this.ID = ID;
+            // Generate a random ID if none was passed.
+            if (string.IsNullOrEmpty(id)) id = Guid.NewGuid().ToString();
+            this.ID = id;
+            this.Data = data;
         }
+
+        /// <summary>
+        /// Creates a new instance of the Item class with the specified data and ID.
+        /// </summary>
+        /// <param name="data">The data to be stored in the item.</param>
+        /// <param name="id">An optional ID to uniquely identify the item. If not provided, a new GUID will be generated.</param>
+        public Item(string data, string? id = null) : this(Encoding.UTF8.GetBytes(data), id) { }
 
         /// <summary>
         /// Creates a new instance of the Item class from the provided data by serializing it as JSON.
