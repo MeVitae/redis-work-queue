@@ -683,7 +683,7 @@ dependencies = [
 
 [[package]]
 name = "redis-work-queue"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "futures",
  "redis",
