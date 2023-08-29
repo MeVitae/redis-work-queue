@@ -1,7 +1,6 @@
-package main
+package autoScallerSim
 
 import (
-	"io/ioutil"
 	"log"
 
 	"gopkg.in/yaml.v2"
@@ -37,13 +36,12 @@ type ScalerSim struct {
 	NumberToSpawn  int    `yaml:"numberToSpawn"`
 }
 
-func readYaml() MainStruct {
-	data, _ := ioutil.ReadFile("config.yaml")
+func ReadYaml(data []byte) *MainStruct {
 	var result MainStruct
 	err := yaml.Unmarshal([]byte(data), &result)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	return result
+	return &result
 }

@@ -1,4 +1,4 @@
-package main
+package autoScallerSim
 
 //  10 ticks == 1 second
 import (
@@ -81,29 +81,10 @@ type incomingJob struct {
 	myData  document
 }
 
-type workerConfig struct {
-	timetilDieRange [2]int
-	timeTilStart    [2]int
-	price           float64
-}
-
-
-var ConfigWorker = map[string]workerConfig{
-	"Base": {
-		timetilDieRange: [2]int{-1, -1},
-		timeTilStart:    [2]int{220, 240},
-		price:           1,
-	},
-	"Spot": {
-		timetilDieRange: [2]int{1300000, 2900000},
-		timeTilStart:    [2]int{1200, 1800},
-		price:           0.15,
-	},
-	"Fast": {
-		timetilDieRange: [2]int{-1, -1},
-		timeTilStart:    [2]int{1200, 1800},
-		price:           1.2,
-	},
+type WorkerConfig struct {
+	TimetilDieRange [2]int
+	TimeTilStart    [2]int
+	Price           float64
 }
 
 var tick = 1
@@ -131,7 +112,7 @@ func receiveJobs(Pod *deploymentStruct, incomingJobChan chan incomingJob, name s
 	}
 }
 
-func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker) {
+func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker, tickChan *chan *Workers) {
 	workers := NewWorkers(deployment, finishjob, Config)
 	myStats := statsStruct{}
 	go receiveJobs(deployment, deployment.jobChan, deployment.podType, Config)
@@ -140,16 +121,17 @@ func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker)
 	for tick := range deployment.tickChan {
 		// every 5 real seconds do a auto scaller processing tick.
 		if tick%50 == 0 {
-			workers.Tick()
+			*tickChan <- &workers
+			<-workers.Verify
 		}
 		deployment.mu.Lock()
 		if stats.seconds != 0 && myStats.seconds != 0 && myStats.jobsDone != 0 && stats.jobsDone != 0 {
 			meantimeTotal := stats.seconds / stats.jobsDone
-			workers.myChart.mu.Lock()
-			workers.myChart.totalSeconds = append(workers.myChart.totalSeconds, int32(meantimeTotal))
-			workers.myChart.mu.Unlock()
+			workers.MyChart.Mu.Lock()
+			workers.MyChart.TotalSeconds = append(workers.MyChart.TotalSeconds, int32(meantimeTotal))
+			workers.MyChart.Mu.Unlock()
 			meantime := myStats.seconds / 10 / myStats.jobsDone / 10
-			workers.myChart.seconds = append(workers.myChart.seconds, int32(meantime))
+			workers.MyChart.Seconds = append(workers.MyChart.Seconds, int32(meantime))
 			myStats.jobsDone = 0
 			myStats.seconds = 0
 			fmt.Println("View: ", ":8081/", deployment.podType, "| number of jobs:", strconv.Itoa(len(deployment.jobs)), "| number of workers:", len(deployment.workers), "| deployment:", deployment.podType, "| job done mean time:", meantime, "| overall job done time:", meantimeTotal)
@@ -161,6 +143,7 @@ func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker)
 		for Wid, worker := range deployment.workers {
 
 			if worker.timeTilStart > 0 {
+				//fmt.Println(worker.timeTilStart)
 				deployment.workers[Wid].timeTilStart -= 1
 			} else if worker.workingon == "" {
 
@@ -226,20 +209,19 @@ type commingJobs struct {
 	JChan map[string]deploymentStruct
 }
 
-func main() {
-	config := readYaml()
+func Start(tickChannel *chan *Workers, config MainStruct) {
 	incommingChans := commingJobs{
 		JChan: make(map[string]deploymentStruct),
 	}
 
 	jobFinish := make(chan job)
 	for index, _ := range config {
-		go Deployment(makeDepoloyment(index, &incommingChans), jobFinish, config[index])
+		go Deployment(makeDepoloyment(index, &incommingChans), jobFinish, config[index], tickChannel)
 	}
 
 	tikTimingJobs := getTickJobTimings()
 
-	go jobFinishF(jobFinish, incommingChans, config)
+	go jobFinishF(jobFinish, &incommingChans, config)
 	for {
 
 		if tikTimingJobs.tickTime[strconv.Itoa(tick)] {
@@ -269,7 +251,7 @@ type statsStruct struct {
 
 var stats = statsStruct{}
 
-func jobFinishF(jobFinish chan job, incommingJobsChann commingJobs, config MainStruct) {
+func jobFinishF(jobFinish chan job, incommingJobsChann *commingJobs, config MainStruct) {
 	for job := range jobFinish {
 		incommingJobsChann.mu.Lock()
 		incommingJobsChan := incommingJobsChann.JChan
@@ -277,8 +259,7 @@ func jobFinishF(jobFinish chan job, incommingJobsChann commingJobs, config MainS
 		if config[job.jobType].ScalerSim.NextStage == "Finish" {
 
 			docsNeedToBeDone.mu.RLock()
-			if docsNeedToBeDone.progress[job.MyData.id].done == docsNeedToBeDone.progress[job.MyData.id].haveToBeDone {
-
+			if docsNeedToBeDone.progress[job.MyData.id].done == docsNeedToBeDone.progress[job.MyData.id].haveToBeDone && docsNeedToBeDone.progress[job.MyData.id].haveToBeDone > 0 {
 				stats.mu.Lock()
 				stats.seconds += docsNeedToBeDone.progress[job.MyData.id].ticksTaken / docsNeedToBeDone.progress[job.MyData.id].done
 				stats.jobsDone++

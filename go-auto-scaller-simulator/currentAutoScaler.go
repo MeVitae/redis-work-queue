@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"go-auto-scaller-simulator/autoScallerSim"
+	_ "go-auto-scaller-simulator/autoScallerSim"
+	"io/ioutil"
 	"math"
-	"sync"
 )
 
 type WorkerCounts struct {
@@ -28,19 +30,19 @@ type SlowDown struct {
 	// requests stores up to the `count` most recent scale requests.
 	//
 	// A smaller index indicates an older request.
-	requests []WorkerCounts
+	requests []autoScallerSim.WorkerCounts
 	count    int
 }
 
 func NewSlowDown(count int) *SlowDown {
 	return &SlowDown{
 		count:    count,
-		requests: make([]WorkerCounts, 0, count),
+		requests: make([]autoScallerSim.WorkerCounts, 0, count),
 	}
 }
 
 // Push the most recent scaling request.
-func (slowdown *SlowDown) Push(counts WorkerCounts) {
+func (slowdown *SlowDown) Push(counts autoScallerSim.WorkerCounts) {
 	// Store only the last `count` requests. Keeping the newest request at the end.
 	if len(slowdown.requests) < slowdown.count {
 		slowdown.requests = append(slowdown.requests, counts)
@@ -57,7 +59,7 @@ func (slowdown *SlowDown) Push(counts WorkerCounts) {
 // ScaleTo decides what the worker counts should actually be scaled to.
 //
 // See the docs on `SlowDown` for how this behaves.
-func (slowdown *SlowDown) ScaleTo(current WorkerCounts) WorkerCounts {
+func (slowdown *SlowDown) ScaleTo(current autoScallerSim.WorkerCounts) autoScallerSim.WorkerCounts {
 	ret := slowdown.requests[len(slowdown.requests)-1]
 
 	if ret.Base < current.Base {
@@ -93,82 +95,43 @@ func (slowdown *SlowDown) ScaleTo(current WorkerCounts) WorkerCounts {
 	return ret
 }
 
+var ConfigWorker = map[string]autoScallerSim.WorkerConfig{
+	"base": {
+		TimetilDieRange: [2]int{-1, -1},
+		TimeTilStart:    [2]int{1000, 1100},
+		Price:           1,
+	},
+	"spot": {
+		TimetilDieRange: [2]int{1300000, 2900000},
+		TimeTilStart:    [2]int{1000, 1100},
+		Price:           0.15,
+	},
+	"fast": {
+		TimetilDieRange: [2]int{-1, -1},
+		TimeTilStart:    [2]int{1000, 1100},
+		Price:           1.2,
+	},
+}
+
 // Workers are a set of 3 k8s deployments: base, fast and spot. These are responsible for handling the
 // jobs from a job queue in a Redis database.
-type Workers struct {
-	mu sync.RWMutex
-	// deployments is the interface to get and set information about the k8s deployment.
-	deployments DeploymentInterfaceAutoScaler
-	// baseName of the base k8s deployment.
-	baseName string
-	// fastName of the fast k8s deployment.
-	fastName string
-	// spotName of the spot k8s deployment.
-	spotName string
-	myChart  *chartData
-
-	deployment *deploymentStruct
-
-	deploymentTypes *deploymentTypes
-	// db is the Redis database containing the work queue.
-	db AutoScalerDb
-	// queue is the work queue to scale for
-	queue *map[string]int32
-
-	queueManager    AutoScalerWQ
-	deploymentsList deploymentList
-	// calculator is the function to calculate scaling values.
-	calculator Calculator
-	// slowdown is the SlowDown instance for delaying and smoothing downscale.
-	slowdown *SlowDown
-	// maxFast is the maximum number of fast workers until they are converted to spot workers.
-	//
-	// maxFast is stored here since it's taken into account *after* the slowdown is applied, not in
-	// the Calculator.
-	maxFast int32
-}
-
-func NewWorkers(deployment *deploymentStruct, finishjob chan job, Config Worker) Workers {
-	calcConfig := Config.CalculatorY
-	NChart := startPlotGraph(deployment.podType)
-	return Workers{
-		deploymentTypes: &deploymentTypes{"base,spot,fast"},
-		baseName:        "base",
-		fastName:        "fast",
-		spotName:        "spot",
-		queue:           &map[string]int32{},
-		calculator: Calculator{
-			Target:     int32(calcConfig.Target),
-			SpotTarget: int32(calcConfig.SpotTarget),
-			Run:        int32(calcConfig.Run),
-			Spinup:     int32(calcConfig.Spinup),
-		},
-		deploymentsList: deploymentList{
-			list: make(map[string]int32),
-		},
-		myChart:    NChart,
-		deployment: deployment,
-		slowdown:   NewSlowDown(8),
-		maxFast:    96,
-	}
-}
 
 // GetCounts returns the current number of intended workers.
-func (workers *Workers) GetCounts() (counts WorkerCounts, err error) {
-	counts.Base = workers.GetCount(workers.baseName)
+func GetCounts() (counts WorkerCounts, err error, workers *autoScallerSim.Workers) {
+	counts.Base = workers.GetCount(workers.BaseName)
 	if err != nil {
 		return
 	}
-	counts.Fast = workers.GetCount(workers.fastName)
+	counts.Fast = workers.GetCount(workers.FastName)
 	if err != nil {
 		return
 	}
-	counts.Spot = workers.GetCount(workers.spotName)
+	counts.Spot = workers.GetCount(workers.SpotName)
 	return
 }
 
 // GetReadyCounts returns the current number of workers which are actually ready.
-func (workers *Workers) GetReadyCounts() (counts WorkerCounts, err error) {
+func GetReadyCounts() (counts WorkerCounts, err error, workers *autoScallerSim.Workers) {
 	counts.Base = workers.GetReadyCount("base")
 	counts.Fast = workers.GetReadyCount("fast")
 	counts.Spot = workers.GetReadyCount("spot")
@@ -180,20 +143,16 @@ func (workers *Workers) GetReadyCounts() (counts WorkerCounts, err error) {
 // accordingly.
 var tickCount = 0
 
-func (workers *Workers) Tick() {
-	workers.mu.Lock()
+func (autoScaller *autoScallerStruct) Tick() {
+	autoScaller.workers.Mu.Lock()
 
-	counts, err := workers.GetCounts()
-	if err != nil {
-		return
-	}
-	readyCounts, err := workers.GetReadyCounts()
-	if err != nil {
-		return
-	}
+	counts := autoScaller.workers.GetCounts()
+
+	readyCounts := autoScaller.workers.GetReadyCounts()
 	// Determine the current length of the work queue
-	qlen := workers.deployment.QueueLen()
-	workers.myChart.jobs = append(workers.myChart.jobs, int32(qlen))
+
+	qlen := autoScaller.workers.Deployment.QueueLen()
+	autoScaller.workers.MyChart.Jobs = append(autoScaller.workers.MyChart.Jobs, int32(qlen))
 	fmt.Printf(
 		`Scale: Base workers: %d, Fast workers: %d, Spot workers: %d;
 Ready: Base workers: %d, Fast workers: %d, Spot workers: %d;
@@ -204,34 +163,61 @@ Queue length: %d
 		qlen,
 	)
 
-	workers.myChart.workers = append(workers.myChart.workers, counts.Base+counts.Fast+counts.Spot)
-	workers.myChart.readyWorkers = append(workers.myChart.readyWorkers, readyCounts.Base+readyCounts.Fast+readyCounts.Spot)
-	workers.myChart.ticks = append(workers.myChart.ticks, int32(tickCount))
+	autoScaller.workers.MyChart.Workers = append(autoScaller.workers.MyChart.Workers, counts.Base+counts.Fast+counts.Spot)
+	autoScaller.workers.MyChart.ReadyWorkers = append(autoScaller.workers.MyChart.ReadyWorkers, readyCounts.Base+readyCounts.Fast+readyCounts.Spot)
+	autoScaller.workers.MyChart.Ticks = append(autoScaller.workers.MyChart.Ticks, int32(tickCount))
 
-	newCounts := workers.calculator.Calc(counts, readyCounts, int32(qlen))
-	workers.slowdown.Push(newCounts)
-	newCounts = workers.slowdown.ScaleTo(counts)
-	if newCounts.Fast > workers.maxFast {
-		newCounts.Spot += newCounts.Fast - workers.maxFast
-		newCounts.Fast = workers.maxFast
+	newCounts := autoScaller.calculator.Calc(counts, readyCounts, int32(qlen))
+	autoScaller.slowdown.Push(newCounts)
+	newCounts = autoScaller.slowdown.ScaleTo(counts)
+	if newCounts.Fast > autoScaller.workers.MaxFast {
+		newCounts.Spot += newCounts.Fast - autoScaller.workers.MaxFast
+		newCounts.Fast = autoScaller.workers.MaxFast
 	}
 
 	if newCounts.Base != counts.Base {
 		fmt.Println("Scaling base workers to", newCounts.Base)
-		workers.SetCount(workers.baseName, newCounts.Base)
+		autoScaller.workers.SetCount(autoScaller.workers.BaseName, newCounts.Base)
 	}
 	if newCounts.Fast != counts.Fast {
 		fmt.Println("Scaling fast workers to", newCounts.Fast)
-		workers.SetCount(workers.fastName, newCounts.Fast)
+		autoScaller.workers.SetCount(autoScaller.workers.FastName, newCounts.Fast)
 	}
 	if newCounts.Spot != counts.Spot {
 		fmt.Println("Scaling spot workers to", newCounts.Spot)
-		workers.SetCount(workers.spotName, newCounts.Spot)
+		autoScaller.workers.SetCount(autoScaller.workers.SpotName, newCounts.Spot)
 	}
 
-	workers.ProcessWorkersChange()
+	autoScaller.workers.ProcessWorkersChange()
+	autoScaller.workers.Mu.Unlock()
+}
 
-	workers.mu.Unlock()
+type autoScallerStruct struct {
+	workers    *autoScallerSim.Workers
+	slowdown   *SlowDown
+	calculator Calculator
+}
+
+func main() {
+	data, _ := ioutil.ReadFile("config.yaml")
+	config := autoScallerSim.ReadYaml(data)
+	tickChan := make(chan *autoScallerSim.Workers, 5)
+
+	autoScaller := autoScallerStruct{
+		slowdown: NewSlowDown(8),
+	}
+	go autoScallerSim.Start(&tickChan, *config)
+	for elem := range tickChan {
+		autoScaller.workers = elem
+		autoScaller.calculator = Calculator{
+			Target:     int32((*config)[elem.MyChart.Name].CalculatorY.Target),
+			SpotTarget: int32((*config)[elem.MyChart.Name].CalculatorY.SpotTarget),
+			Run:        int32((*config)[elem.MyChart.Name].CalculatorY.Run),
+			Spinup:     int32((*config)[elem.MyChart.Name].CalculatorY.Spinup),
+		}
+		autoScaller.Tick()
+		elem.Verify <- true
+	}
 }
 
 // AutoScale autoscales the cluster! It autoscales two worker sets: section and person detection.
@@ -258,7 +244,7 @@ type Calculator struct {
 
 // WillTake is the time it will take to get through the queue of `qlen` jobs with `counts` of
 // workers, excluding spot workers.
-func (calc *Calculator) WillTake(counts WorkerCounts, qlen int32) int32 {
+func (calc *Calculator) WillTake(counts autoScallerSim.WorkerCounts, qlen int32) int32 {
 	if counts.Base+counts.Fast == 0 {
 		return math.MaxInt32
 	}
@@ -267,7 +253,7 @@ func (calc *Calculator) WillTake(counts WorkerCounts, qlen int32) int32 {
 
 // WillTake is the time it will take to get through the queue of `qlen` jobs with `counts` of
 // workers including spot workers.
-func (calc *Calculator) WillTakeWithSpot(counts WorkerCounts, qlen int32) int32 {
+func (calc *Calculator) WillTakeWithSpot(counts autoScallerSim.WorkerCounts, qlen int32) int32 {
 	if counts.Base+counts.Fast+counts.Spot == 0 {
 		return math.MaxInt32
 	}
@@ -275,7 +261,7 @@ func (calc *Calculator) WillTakeWithSpot(counts WorkerCounts, qlen int32) int32 
 }
 
 // Calc the number of workers we'd like.
-func (calc *Calculator) Calc(counts WorkerCounts, readyCounts WorkerCounts, qlen int32) WorkerCounts {
+func (calc *Calculator) Calc(counts autoScallerSim.WorkerCounts, readyCounts autoScallerSim.WorkerCounts, qlen int32) autoScallerSim.WorkerCounts {
 	// If the queue is empty, we don't need any workers (other than the base workers)!
 	if qlen == 0 {
 		counts.Fast = 0

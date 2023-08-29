@@ -1,4 +1,4 @@
-package main
+package graphs
 
 import (
 	"net/http"
@@ -14,19 +14,19 @@ type CharDisplayConfing struct {
 	showLastNumberOfElements int32
 }
 
-type chartData struct {
-	mu           sync.RWMutex
-	seconds      []int32
-	ticks        []int32
-	jobs         []int32
-	readyWorkers []int32
-	workers      []int32
-	name         string
-	totalSeconds []int32
-	config       CharDisplayConfing
+type ChartData struct {
+	Mu           sync.RWMutex
+	Seconds      []int32
+	Ticks        []int32
+	Jobs         []int32
+	ReadyWorkers []int32
+	Workers      []int32
+	Name         string
+	TotalSeconds []int32
+	Config       CharDisplayConfing
 }
 
-func httpserver(w http.ResponseWriter, _ *http.Request, Cdata *chartData) {
+func httpserver(w http.ResponseWriter, _ *http.Request, Cdata *ChartData) {
 
 	Jobs_Seconds := charts.NewLine()
 	Jobs_Seconds.SetGlobalOptions(
@@ -35,32 +35,32 @@ func httpserver(w http.ResponseWriter, _ *http.Request, Cdata *chartData) {
 			Title: "Jobs done time",
 		}))
 
-	Jobs_Seconds.SetXAxis(Cdata.convertToIntSlice(Cdata.ticks)).
-		AddSeries("Seconds Taken "+Cdata.name, Cdata.convertToIntSlice(Cdata.seconds)).
-		AddSeries("Total Seconds taken", Cdata.convertToIntSlice(Cdata.totalSeconds)).
+	Jobs_Seconds.SetXAxis(Cdata.convertToIntSlice(Cdata.Ticks)).
+		AddSeries("Seconds Taken "+Cdata.Name, Cdata.convertToIntSlice(Cdata.Seconds)).
+		AddSeries("Total Seconds taken", Cdata.convertToIntSlice(Cdata.TotalSeconds)).
 		SetSeriesOptions(charts.WithLineChartOpts(opts.LineChart{Smooth: false}))
 	Workers := charts.NewLine()
-	Workers.SetXAxis(Cdata.convertToIntSlice(Cdata.ticks)).
-		AddSeries("Workers", Cdata.convertToIntSlice(Cdata.workers)).
-		AddSeries("Ready Workers", Cdata.convertToIntSlice(Cdata.readyWorkers)).
+	Workers.SetXAxis(Cdata.convertToIntSlice(Cdata.Ticks)).
+		AddSeries("Workers", Cdata.convertToIntSlice(Cdata.Workers)).
+		AddSeries("Ready Workers", Cdata.convertToIntSlice(Cdata.ReadyWorkers)).
 
 		//AddSeries("Jobs Queue", GetFileDataFromSavedData("JobsQueue")).
 		SetSeriesOptions(charts.WithLineChartOpts(opts.LineChart{Smooth: false}))
 
 	TotalTime := charts.NewLine()
-	TotalTime.SetXAxis(Cdata.convertToIntSlice(Cdata.ticks)).
+	TotalTime.SetXAxis(Cdata.convertToIntSlice(Cdata.Ticks)).
 		//AddSeries("Total Seconds", convertToIntSlice(Cdata.totalSeconds)).
-		AddSeries("Number of jobs "+Cdata.name, Cdata.convertToIntSlice(Cdata.jobs)).
+		AddSeries("Number of jobs "+Cdata.Name, Cdata.convertToIntSlice(Cdata.Jobs)).
 		SetSeriesOptions(charts.WithLineChartOpts(opts.LineChart{Smooth: false}))
 	TotalTime.Render(w)
 	Workers.Render(w)
 	Jobs_Seconds.Render(w)
 }
 
-func startPlotGraph(name string) *chartData {
-	Cdata := chartData{
-		name: name,
-		config: CharDisplayConfing{
+func StartPlotGraph(name string) *ChartData {
+	Cdata := ChartData{
+		Name: name,
+		Config: CharDisplayConfing{
 			showAllData:              false,
 			showLastNumberOfElements: 1000,
 		},
@@ -72,10 +72,10 @@ func startPlotGraph(name string) *chartData {
 	return &Cdata
 }
 
-func (Cdata *chartData) convertToIntSlice(data []int32) []opts.LineData {
+func (Cdata *ChartData) convertToIntSlice(data []int32) []opts.LineData {
 	numElements := len(data)
-	if Cdata.config.showAllData == false && numElements > int(Cdata.config.showLastNumberOfElements) {
-		numElements = int(Cdata.config.showLastNumberOfElements)
+	if Cdata.Config.showAllData == false && numElements > int(Cdata.Config.showLastNumberOfElements) {
+		numElements = int(Cdata.Config.showLastNumberOfElements)
 	}
 
 	lineDataSlice := make([]opts.LineData, numElements)
