@@ -1,6 +1,7 @@
 package graphs
 
 import (
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -19,6 +20,7 @@ type ChartData struct {
 	Seconds      []int32
 	Ticks        []int32
 	Jobs         []int32
+	Cost         []int32
 	ReadyWorkers []int32
 	Workers      []int32
 	Name         string
@@ -43,10 +45,12 @@ func httpserver(w http.ResponseWriter, _ *http.Request, Cdata *ChartData) {
 	Workers.SetXAxis(Cdata.convertToIntSlice(Cdata.Ticks)).
 		AddSeries("Workers", Cdata.convertToIntSlice(Cdata.Workers)).
 		AddSeries("Ready Workers", Cdata.convertToIntSlice(Cdata.ReadyWorkers)).
-
-		//AddSeries("Jobs Queue", GetFileDataFromSavedData("JobsQueue")).
 		SetSeriesOptions(charts.WithLineChartOpts(opts.LineChart{Smooth: false}))
-
+	Cost := charts.NewLine()
+	Cost.SetXAxis(Cdata.convertToIntSliceCost(Cdata.Cost)).
+		AddSeries("Cost", Cdata.convertToIntSliceCost(Cdata.Cost)).
+		SetSeriesOptions(charts.WithLineChartOpts(opts.LineChart{Smooth: false}))
+	Cost.Render(w)
 	TotalTime := charts.NewLine()
 	TotalTime.SetXAxis(Cdata.convertToIntSlice(Cdata.Ticks)).
 		//AddSeries("Total Seconds", convertToIntSlice(Cdata.totalSeconds)).
@@ -78,6 +82,21 @@ func (Cdata *ChartData) convertToIntSlice(data []int32) []opts.LineData {
 		numElements = int(Cdata.Config.showLastNumberOfElements)
 	}
 
+	lineDataSlice := make([]opts.LineData, numElements)
+	for i := 0; i < numElements; i++ {
+		index := len(data) - numElements + i
+		lineDataSlice[i] = opts.LineData{Value: data[index]}
+	}
+	return lineDataSlice
+}
+
+func (Cdata *ChartData) convertToIntSliceCost(data []int32) []opts.LineData {
+	numElements := len(data)
+	if Cdata.Config.showAllData == false && numElements > int(50000) {
+		numElements = int(50000)
+	}
+
+	fmt.Println(data)
 	lineDataSlice := make([]opts.LineData, numElements)
 	for i := 0; i < numElements; i++ {
 		index := len(data) - numElements + i

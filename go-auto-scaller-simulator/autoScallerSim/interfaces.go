@@ -111,11 +111,12 @@ func (workers *Workers) ProcessWorkersChange() {
 		if Workers > totalWorkers[name] {
 			DiffenceInWorkers := Workers - totalWorkers[name]
 			for i := int32(1); i <= DiffenceInWorkers; i++ {
-
+				//fmt.Println(workers.WorkersConfig)
 				deployment.workers = append(deployment.workers, worker{
 					timetilDie:   generateRandomNumber(workers.WorkersConfig[name].TimetilDieRange[0], workers.WorkersConfig[name].TimetilDieRange[1]),
 					power:        1,
 					workingon:    "",
+					cost:         workers.WorkersConfig[name].Price,
 					timeTilStart: generateRandomNumber(workers.WorkersConfig[name].TimeTilStart[0], workers.WorkersConfig[name].TimeTilStart[1]),
 					wtype:        name,
 				})
@@ -167,7 +168,7 @@ type Workers struct {
 	MaxFast int32
 }
 
-func NewWorkers(deployment *deploymentStruct, finishjob chan job, Config Worker) Workers {
+func NewWorkers(deployment *deploymentStruct, finishjob chan job, Config Worker, WorkersConfig map[string]WorkerConfig) Workers {
 	NChart := graphs.StartPlotGraph(deployment.podType)
 	return Workers{
 		deploymentTypes: &deploymentTypes{"base,spot,fast"},
@@ -179,7 +180,7 @@ func NewWorkers(deployment *deploymentStruct, finishjob chan job, Config Worker)
 			list: make(map[string]int32),
 		},
 		Verify:        make(chan bool),
-		WorkersConfig: make(map[string]WorkerConfig),
+		WorkersConfig: WorkersConfig,
 		MyChart:       NChart,
 		Deployment:    deployment,
 		MaxFast:       96,

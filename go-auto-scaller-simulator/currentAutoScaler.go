@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"go-auto-scaller-simulator/autoScallerSim"
 	_ "go-auto-scaller-simulator/autoScallerSim"
 	"io/ioutil"
@@ -153,15 +152,15 @@ func (autoScaller *autoScallerStruct) Tick() {
 
 	qlen := autoScaller.workers.Deployment.QueueLen()
 	autoScaller.workers.MyChart.Jobs = append(autoScaller.workers.MyChart.Jobs, int32(qlen))
-	fmt.Printf(
-		`Scale: Base workers: %d, Fast workers: %d, Spot workers: %d;
-Ready: Base workers: %d, Fast workers: %d, Spot workers: %d;
-Queue length: %d
-`,
-		counts.Base, counts.Fast, counts.Spot,
-		readyCounts.Base, readyCounts.Fast, readyCounts.Spot,
-		qlen,
-	)
+	//fmt.Printf(
+	//		`Scale: Base workers: %d, Fast workers: %d, Spot workers: %d;
+	//Ready: Base workers: %d, Fast workers: %d, Spot workers: %d;
+	//Queue length: %d
+	//`,
+	//		counts.Base, counts.Fast, counts.Spot,
+	//	readyCounts.Base, readyCounts.Fast, readyCounts.Spot,
+	//		qlen,
+	//	)
 
 	autoScaller.workers.MyChart.Workers = append(autoScaller.workers.MyChart.Workers, counts.Base+counts.Fast+counts.Spot)
 	autoScaller.workers.MyChart.ReadyWorkers = append(autoScaller.workers.MyChart.ReadyWorkers, readyCounts.Base+readyCounts.Fast+readyCounts.Spot)
@@ -176,15 +175,15 @@ Queue length: %d
 	}
 
 	if newCounts.Base != counts.Base {
-		fmt.Println("Scaling base workers to", newCounts.Base)
+		//fmt.Println("Scaling base workers to", newCounts.Base)
 		autoScaller.workers.SetCount(autoScaller.workers.BaseName, newCounts.Base)
 	}
 	if newCounts.Fast != counts.Fast {
-		fmt.Println("Scaling fast workers to", newCounts.Fast)
+		//fmt.Println("Scaling fast workers to", newCounts.Fast)
 		autoScaller.workers.SetCount(autoScaller.workers.FastName, newCounts.Fast)
 	}
 	if newCounts.Spot != counts.Spot {
-		fmt.Println("Scaling spot workers to", newCounts.Spot)
+		//fmt.Println("Scaling spot workers to", newCounts.Spot)
 		autoScaller.workers.SetCount(autoScaller.workers.SpotName, newCounts.Spot)
 	}
 
@@ -206,7 +205,7 @@ func main() {
 	autoScaller := autoScallerStruct{
 		slowdown: NewSlowDown(8),
 	}
-	go autoScallerSim.Start(&tickChan, *config)
+	go autoScallerSim.Start(&tickChan, *config, ConfigWorker)
 	for elem := range tickChan {
 		autoScaller.workers = elem
 		autoScaller.calculator = Calculator{

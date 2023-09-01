@@ -58,6 +58,7 @@ type worker struct {
 	timetilDie   int
 	timeTilStart int
 	power        int
+	cost         float32
 	workingon    string
 	wtype        string
 }
@@ -84,7 +85,7 @@ type incomingJob struct {
 type WorkerConfig struct {
 	TimetilDieRange [2]int
 	TimeTilStart    [2]int
-	Price           float64
+	Price           float32
 }
 
 var tick = 1
@@ -112,9 +113,10 @@ func receiveJobs(Pod *deploymentStruct, incomingJobChan chan incomingJob, name s
 	}
 }
 
-func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker, tickChan *chan *Workers) {
-	workers := NewWorkers(deployment, finishjob, Config)
+func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker, tickChan *chan *Workers, WorkersConfig map[string]WorkerConfig) {
+	workers := NewWorkers(deployment, finishjob, Config, WorkersConfig)
 	myStats := statsStruct{}
+	var cost int32
 	go receiveJobs(deployment, deployment.jobChan, deployment.podType, Config)
 	fmt.Println(deployment.podType, "is ready")
 
@@ -134,12 +136,26 @@ func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker,
 			workers.MyChart.Seconds = append(workers.MyChart.Seconds, int32(meantime))
 			myStats.jobsDone = 0
 			myStats.seconds = 0
-			fmt.Println("View: ", ":8081/", deployment.podType, "| number of jobs:", strconv.Itoa(len(deployment.jobs)), "| number of workers:", len(deployment.workers), "| deployment:", deployment.podType, "| job done mean time:", meantime, "| overall job done time:", meantimeTotal)
+			//fmt.Println("View: ", ":8081/", deployment.podType, "| number of jobs:", strconv.Itoa(len(deployment.jobs)), "| number of workers:", len(deployment.workers), "| deployment:", deployment.podType, "| job done mean time:", meantime, "| overall job done time:", meantimeTotal)
 		}
 		for id, job := range deployment.jobs {
 			job.myTicks += 1
 			deployment.jobs[id] = job
 		}
+
+		cost += int32(deployment.CalculateCost())
+
+		if len(workers.MyChart.Cost) > 1 {
+			lastCost := workers.MyChart.Cost[len(workers.MyChart.Cost)-2]
+			difference := cost - lastCost
+			//threshold := 0.0005 * float32(cost)
+			if float32(difference) > 0 {
+				workers.MyChart.Cost = append(workers.MyChart.Cost, cost)
+			}
+		} else {
+			workers.MyChart.Cost = append(workers.MyChart.Cost, cost)
+		}
+
 		for Wid, worker := range deployment.workers {
 
 			if worker.timeTilStart > 0 {
@@ -209,14 +225,14 @@ type commingJobs struct {
 	JChan map[string]deploymentStruct
 }
 
-func Start(tickChannel *chan *Workers, config MainStruct) {
+func Start(tickChannel *chan *Workers, config MainStruct, WorkersConfig map[string]WorkerConfig) {
 	incommingChans := commingJobs{
 		JChan: make(map[string]deploymentStruct),
 	}
-
+	//fmt.Println(WorkersConfig)
 	jobFinish := make(chan job)
 	for index, _ := range config {
-		go Deployment(makeDepoloyment(index, &incommingChans), jobFinish, config[index], tickChannel)
+		go Deployment(makeDepoloyment(index, &incommingChans), jobFinish, config[index], tickChannel, WorkersConfig)
 	}
 
 	tikTimingJobs := getTickJobTimings()
