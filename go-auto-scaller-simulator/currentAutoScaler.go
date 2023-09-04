@@ -213,6 +213,9 @@ func main() {
 	go manageGraphChan(&deploymentGraphs, &graphChan)
 	go autoScallerSim.Start(&tickChan, *&config.MainStruct, WorkersConfig, &graphChan, config.ProcessStarterConfig, deployments)
 	for elem := range tickChan {
+
+		fmt.Println(elem.GetDeployment("fast").GetRequest(), "123") // here
+
 		tick++
 		autoScaller.workers = elem
 		autoScaller.calculator = Calculator{
