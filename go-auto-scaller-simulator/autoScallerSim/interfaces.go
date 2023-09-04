@@ -1,7 +1,6 @@
 package autoScallerSim
 
 import (
-	"go-auto-scaller-simulator/graphs"
 	"sync"
 )
 
@@ -75,6 +74,9 @@ func (workers *Workers) GetCount(deploymentName string) int32 {
 	return workers.deploymentsList.list[deploymentName]
 }
 func (workers *Workers) SetCount(deploymentName string, count int32) {
+	if count > 90 {
+		count = 90
+	}
 	workers.deploymentsList.mu.Lock()
 	workers.deploymentsList.list[deploymentName] = count
 	workers.deploymentsList.mu.Unlock()
@@ -149,12 +151,11 @@ type Workers struct {
 	FastName string
 	// spotName of the spot k8s deployment.
 	SpotName string
-	MyChart  *graphs.ChartData
 
 	Verify        chan bool
 	WorkersConfig map[string]WorkerConfig
-
-	Deployment *deploymentStruct
+	DepName       string
+	Deployment    *deploymentStruct
 
 	deploymentTypes *deploymentTypes
 	// db is the Redis database containing the work queue.
@@ -169,7 +170,6 @@ type Workers struct {
 }
 
 func NewWorkers(deployment *deploymentStruct, finishjob chan job, Config Worker, WorkersConfig map[string]WorkerConfig) Workers {
-	NChart := graphs.StartPlotGraph(deployment.podType)
 	return Workers{
 		deploymentTypes: &deploymentTypes{"base,spot,fast"},
 		BaseName:        "base",
@@ -179,9 +179,9 @@ func NewWorkers(deployment *deploymentStruct, finishjob chan job, Config Worker,
 		deploymentsList: deploymentList{
 			list: make(map[string]int32),
 		},
+		DepName:       deployment.podType,
 		Verify:        make(chan bool),
 		WorkersConfig: WorkersConfig,
-		MyChart:       NChart,
 		Deployment:    deployment,
 		MaxFast:       96,
 	}

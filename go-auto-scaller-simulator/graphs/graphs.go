@@ -47,7 +47,7 @@ func httpserver(w http.ResponseWriter, _ *http.Request, Cdata *ChartData) {
 		AddSeries("Ready Workers", Cdata.convertToIntSlice(Cdata.ReadyWorkers)).
 		SetSeriesOptions(charts.WithLineChartOpts(opts.LineChart{Smooth: false}))
 	Cost := charts.NewLine()
-	Cost.SetXAxis(Cdata.convertToIntSliceCost(Cdata.Cost)).
+	Cost.SetXAxis(Cdata.convertToIntSliceCost(Cdata.Ticks)).
 		AddSeries("Cost", Cdata.convertToIntSliceCost(Cdata.Cost)).
 		SetSeriesOptions(charts.WithLineChartOpts(opts.LineChart{Smooth: false}))
 	Cost.Render(w)
@@ -103,4 +103,10 @@ func (Cdata *ChartData) convertToIntSliceCost(data []int32) []opts.LineData {
 		lineDataSlice[i] = opts.LineData{Value: data[index]}
 	}
 	return lineDataSlice
+}
+
+type GraphInfo struct {
+	Deployment string
+	DataType   string
+	Data       int32
 }

@@ -46,7 +46,7 @@ section:
       Spinup: 160
     value: 12
   ScalerSim:
-    PowerNeededMin: [60,100]
+    PowerNeededMin: [30,70]
     NextStage: "reading"
     numberToSpawn:  1
 reading:

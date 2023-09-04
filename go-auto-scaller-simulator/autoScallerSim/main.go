@@ -3,6 +3,8 @@ package autoScallerSim
 //  10 ticks == 1 second
 import (
 	"fmt"
+	"go-auto-scaller-simulator/graphs"
+	_ "go-auto-scaller-simulator/graphs"
 	"strconv"
 	"sync"
 
@@ -113,48 +115,43 @@ func receiveJobs(Pod *deploymentStruct, incomingJobChan chan incomingJob, name s
 	}
 }
 
-func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker, tickChan *chan *Workers, WorkersConfig map[string]WorkerConfig) {
+func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker, tickChan *chan *Workers, WorkersConfig map[string]WorkerConfig, graphInfoCH *chan graphs.GraphInfo) {
 	workers := NewWorkers(deployment, finishjob, Config, WorkersConfig)
 	myStats := statsStruct{}
+	meantimeTotal := 0
+	meantime := 0
 	var cost int32
 	go receiveJobs(deployment, deployment.jobChan, deployment.podType, Config)
 	fmt.Println(deployment.podType, "is ready")
 
 	for tick := range deployment.tickChan {
 		// every 5 real seconds do a auto scaller processing tick.
+
 		if tick%50 == 0 {
+			*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "Cost", Data: cost}
+			if stats.seconds != 0 && myStats.seconds != 0 && myStats.jobsDone != 0 && stats.jobsDone != 0 {
+				meantimeTotal = stats.seconds / stats.jobsDone
+				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "TotalSeconds", Data: int32(meantimeTotal)}
+				meantime = myStats.seconds / 10 / myStats.jobsDone / 10
+				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "Seconds", Data: int32(meantime)}
+				myStats.jobsDone = 0
+				myStats.seconds = 0
+				//fmt.Println("View: ", ":8081/", deployment.podType, "| number of jobs:", strconv.Itoa(len(deployment.jobs)), "| number of workers:", len(deployment.workers), "| deployment:", deployment.podType, "| job done mean time:", meantime, "| overall job done time:", meantimeTotal)
+			} else {
+				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "TotalSeconds", Data: int32(meantimeTotal)}
+				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "Seconds", Data: int32(meantime)}
+
+			}
 			*tickChan <- &workers
 			<-workers.Verify
 		}
 		deployment.mu.Lock()
-		if stats.seconds != 0 && myStats.seconds != 0 && myStats.jobsDone != 0 && stats.jobsDone != 0 {
-			meantimeTotal := stats.seconds / stats.jobsDone
-			workers.MyChart.Mu.Lock()
-			workers.MyChart.TotalSeconds = append(workers.MyChart.TotalSeconds, int32(meantimeTotal))
-			workers.MyChart.Mu.Unlock()
-			meantime := myStats.seconds / 10 / myStats.jobsDone / 10
-			workers.MyChart.Seconds = append(workers.MyChart.Seconds, int32(meantime))
-			myStats.jobsDone = 0
-			myStats.seconds = 0
-			//fmt.Println("View: ", ":8081/", deployment.podType, "| number of jobs:", strconv.Itoa(len(deployment.jobs)), "| number of workers:", len(deployment.workers), "| deployment:", deployment.podType, "| job done mean time:", meantime, "| overall job done time:", meantimeTotal)
-		}
 		for id, job := range deployment.jobs {
 			job.myTicks += 1
 			deployment.jobs[id] = job
 		}
 
 		cost += int32(deployment.CalculateCost())
-
-		if len(workers.MyChart.Cost) > 1 {
-			lastCost := workers.MyChart.Cost[len(workers.MyChart.Cost)-2]
-			difference := cost - lastCost
-			//threshold := 0.0005 * float32(cost)
-			if float32(difference) > 0 {
-				workers.MyChart.Cost = append(workers.MyChart.Cost, cost)
-			}
-		} else {
-			workers.MyChart.Cost = append(workers.MyChart.Cost, cost)
-		}
 
 		for Wid, worker := range deployment.workers {
 
@@ -225,14 +222,14 @@ type commingJobs struct {
 	JChan map[string]deploymentStruct
 }
 
-func Start(tickChannel *chan *Workers, config MainStruct, WorkersConfig map[string]WorkerConfig) {
+func Start(tickChannel *chan *Workers, config MainStruct, WorkersConfig map[string]WorkerConfig, GraphInfo *chan graphs.GraphInfo) {
 	incommingChans := commingJobs{
 		JChan: make(map[string]deploymentStruct),
 	}
 	//fmt.Println(WorkersConfig)
 	jobFinish := make(chan job)
 	for index, _ := range config {
-		go Deployment(makeDepoloyment(index, &incommingChans), jobFinish, config[index], tickChannel, WorkersConfig)
+		go Deployment(makeDepoloyment(index, &incommingChans), jobFinish, config[index], tickChannel, WorkersConfig, GraphInfo)
 	}
 
 	tikTimingJobs := getTickJobTimings()

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"go-auto-scaller-simulator/autoScallerSim"
-	_ "go-auto-scaller-simulator/autoScallerSim"
+	"go-auto-scaller-simulator/graphs"
+	_ "go-auto-scaller-simulator/graphs"
 	"io/ioutil"
 	"math"
 )
@@ -97,12 +99,12 @@ func (slowdown *SlowDown) ScaleTo(current autoScallerSim.WorkerCounts) autoScall
 var ConfigWorker = map[string]autoScallerSim.WorkerConfig{
 	"base": {
 		TimetilDieRange: [2]int{-1, -1},
-		TimeTilStart:    [2]int{1000, 1100},
+		TimeTilStart:    [2]int{1000, 1300},
 		Price:           1,
 	},
 	"spot": {
 		TimetilDieRange: [2]int{1300000, 2900000},
-		TimeTilStart:    [2]int{1000, 1100},
+		TimeTilStart:    [2]int{1000, 1300},
 		Price:           0.15,
 	},
 	"fast": {
@@ -140,9 +142,8 @@ func GetReadyCounts() (counts WorkerCounts, err error, workers *autoScallerSim.W
 
 // Tick should be called on a regular time interval and will update the scaling of the workers
 // accordingly.
-var tickCount = 0
 
-func (autoScaller *autoScallerStruct) Tick() {
+func (autoScaller *autoScallerStruct) Tick(graph *graphs.ChartData) {
 	autoScaller.workers.Mu.Lock()
 
 	counts := autoScaller.workers.GetCounts()
@@ -151,7 +152,7 @@ func (autoScaller *autoScallerStruct) Tick() {
 	// Determine the current length of the work queue
 
 	qlen := autoScaller.workers.Deployment.QueueLen()
-	autoScaller.workers.MyChart.Jobs = append(autoScaller.workers.MyChart.Jobs, int32(qlen))
+	graph.Jobs = append(graph.Jobs, int32(qlen))
 	//fmt.Printf(
 	//		`Scale: Base workers: %d, Fast workers: %d, Spot workers: %d;
 	//Ready: Base workers: %d, Fast workers: %d, Spot workers: %d;
@@ -161,11 +162,10 @@ func (autoScaller *autoScallerStruct) Tick() {
 	//	readyCounts.Base, readyCounts.Fast, readyCounts.Spot,
 	//		qlen,
 	//	)
-
-	autoScaller.workers.MyChart.Workers = append(autoScaller.workers.MyChart.Workers, counts.Base+counts.Fast+counts.Spot)
-	autoScaller.workers.MyChart.ReadyWorkers = append(autoScaller.workers.MyChart.ReadyWorkers, readyCounts.Base+readyCounts.Fast+readyCounts.Spot)
-	autoScaller.workers.MyChart.Ticks = append(autoScaller.workers.MyChart.Ticks, int32(tickCount))
-
+	graph.Mu.Lock()
+	graph.Workers = append(graph.Workers, counts.Base+counts.Fast+counts.Spot)
+	graph.ReadyWorkers = append(graph.ReadyWorkers, readyCounts.Base+readyCounts.Fast+readyCounts.Spot)
+	graph.Mu.Unlock()
 	newCounts := autoScaller.calculator.Calc(counts, readyCounts, int32(qlen))
 	autoScaller.slowdown.Push(newCounts)
 	newCounts = autoScaller.slowdown.ScaleTo(counts)
@@ -197,24 +197,48 @@ type autoScallerStruct struct {
 	calculator Calculator
 }
 
+func manageGraphChan(graph *map[string]*graphs.ChartData, graphData *chan graphs.GraphInfo) {
+	for elem := range *graphData {
+		switch elem.DataType {
+		case "TotalSeconds":
+			(*graph)[elem.Deployment].TotalSeconds = append((*graph)[elem.Deployment].TotalSeconds, elem.Data)
+		case "Seconds":
+			(*graph)[elem.Deployment].Seconds = append((*graph)[elem.Deployment].Seconds, elem.Data)
+		case "Cost":
+			(*graph)[elem.Deployment].Cost = append((*graph)[elem.Deployment].Cost, elem.Data) // Fixed this line
+		}
+	}
+}
+
 func main() {
 	data, _ := ioutil.ReadFile("config.yaml")
 	config := autoScallerSim.ReadYaml(data)
 	tickChan := make(chan *autoScallerSim.Workers, 5)
+	graphChan := make(chan graphs.GraphInfo)
+	deploymentGraphs := make(map[string]*graphs.ChartData)
 
 	autoScaller := autoScallerStruct{
 		slowdown: NewSlowDown(8),
 	}
-	go autoScallerSim.Start(&tickChan, *config, ConfigWorker)
+	tick := 0
+	//NChart := graphs.StartPlotGraph(deployment.podType)
+	for index, _ := range *config {
+		fmt.Println(index)
+		(deploymentGraphs)[index] = graphs.StartPlotGraph(index)
+	}
+	go manageGraphChan(&deploymentGraphs, &graphChan)
+	go autoScallerSim.Start(&tickChan, *config, ConfigWorker, &graphChan)
 	for elem := range tickChan {
+		tick++
 		autoScaller.workers = elem
 		autoScaller.calculator = Calculator{
-			Target:     int32((*config)[elem.MyChart.Name].CalculatorY.Target),
-			SpotTarget: int32((*config)[elem.MyChart.Name].CalculatorY.SpotTarget),
-			Run:        int32((*config)[elem.MyChart.Name].CalculatorY.Run),
-			Spinup:     int32((*config)[elem.MyChart.Name].CalculatorY.Spinup),
+			Target:     int32((*config)[elem.DepName].CalculatorY.Target),
+			SpotTarget: int32((*config)[elem.DepName].CalculatorY.SpotTarget),
+			Run:        int32((*config)[elem.DepName].CalculatorY.Run),
+			Spinup:     int32((*config)[elem.DepName].CalculatorY.Spinup),
 		}
-		autoScaller.Tick()
+		deploymentGraphs[elem.DepName].Ticks = append(deploymentGraphs[elem.DepName].Ticks, int32(tick))
+		autoScaller.Tick((deploymentGraphs)[elem.DepName])
 		elem.Verify <- true
 	}
 }
