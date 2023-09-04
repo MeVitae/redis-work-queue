@@ -1,24 +1,15 @@
 package autoScallerSim
 
 import (
+	"io/ioutil"
 	"log"
 
 	"gopkg.in/yaml.v2"
 )
 
 type Worker struct {
-	NewWorkersY `yaml:"NewWorkers"`
+	CalculatorY `yaml:"Calculator"`
 	ScalerSim   `yaml:"ScalerSim"`
-}
-
-type NewWorkersY struct {
-	AppsV1Deployments string `yaml:"appsV1Deployments"`
-	Name              string `yaml:"name"`
-	Db                string `yaml:"db"`
-	ObjectQueue       string `yaml:"objectQueue"`
-	Processing        string `yaml:"processing"`
-	CalculatorY       `yaml:"Calculator"`
-	Value             int `yaml:"value"`
 }
 
 type MainStruct map[string]Worker
@@ -29,19 +20,28 @@ type CalculatorY struct {
 	Run        int `yaml:"Run"`
 	Spinup     int `yaml:"Spinup"`
 }
-
+type ProcessStarter struct {
+	StartRange   int    `yaml:"StartRange"`
+	StartProcess string `yaml:"StartProcess"`
+	Start        string
+}
+type ProcessStarterConfig []ProcessStarter
 type ScalerSim struct {
-	PowerNeededMin []int  `yaml:"PowerNeededMin"`
-	NextStage      string `yaml:"NextStage"`
-	NumberToSpawn  int    `yaml:"numberToSpawn"`
+	PowerNeededMin   []int  `yaml:"PowerNeededMin"`
+	ChildWorker      string `yaml:"ChildWorker"`
+	NumberOfChildren int    `yaml:"NumberOfChildren"`
+}
+type WorkerCofig struct {
+	MainStruct           `yaml:"workers"`
+	ProcessStarterConfig `yaml:"expectedInputs"`
 }
 
-func ReadYaml(data []byte) *MainStruct {
-	var result MainStruct
+func GetConfig(filePath string) (result WorkerCofig) {
+	data, _ := ioutil.ReadFile(filePath)
 	err := yaml.Unmarshal([]byte(data), &result)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	return &result
+	return result
 }

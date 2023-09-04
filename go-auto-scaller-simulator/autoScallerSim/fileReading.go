@@ -6,59 +6,89 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/go-echarts/go-echarts/v2/opts"
 )
 
-var filePath = "./queue-times.txt"
+var filePath = "./queue-times2.txt"
 
 type jobTimings struct {
-	tickTime map[string]bool
+	tickTime map[string]string
 }
 
-func getTickJobTimings() jobTimings {
-	currentTick := 0
-	RealtikTimingJobs := jobTimings{
-		tickTime: make(map[string]bool),
-	}
-
-	file, err := os.Open(filePath)
-	if err != nil {
-		log.Fatalf("Failed to open file: %v", err)
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-
-	tikTimingJobs := jobTimings{
-		tickTime: make(map[string]bool),
-	}
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		tikTimingJobs.tickTime[line] = true
-	}
-
-	for i := 0; i < 10000; i++ {
-		num1 := generateRandomNumber(0, 12000)
-		num2 := generateRandomNumber(num1, 12000)
-		for i := num1; i < num2; i++ {
-			_, exists := tikTimingJobs.tickTime[strconv.Itoa(i)]
-			if exists {
-				RealtikTimingJobs.tickTime[strconv.Itoa(currentTick)] = true
-			} else {
-				currentTick += 4
-			}
-			currentTick++
+func getTickJobTimings(mod bool) jobTimings {
+	if mod {
+		currentTick := 0
+		RealtikTimingJobs := jobTimings{
+			tickTime: make(map[string]string),
 		}
-	}
-	fmt.Println(currentTick)
 
-	if scanner.Err() != nil {
-		log.Fatalf("Error while scanning file: %v", scanner.Err())
-	}
+		file, err := os.Open(filePath)
+		if err != nil {
+			log.Fatalf("Failed to open file: %v", err)
+		}
+		defer file.Close()
 
-	return RealtikTimingJobs
+		scanner := bufio.NewScanner(file)
+
+		tikTimingJobs := jobTimings{
+			tickTime: make(map[string]string),
+		}
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			linenr, err := strconv.Atoi(line)
+			if err != nil {
+				panic(err)
+			}
+			tikTimingJobs.tickTime[strconv.Itoa(linenr)] = "true"
+		}
+
+		for i := 0; i < 10000; i++ {
+			num1 := generateRandomNumber(0, 12000)
+			num2 := generateRandomNumber(num1, 12000)
+			for i := num1; i < num2; i++ {
+				_, exists := tikTimingJobs.tickTime[strconv.Itoa(i)]
+				if exists {
+					RealtikTimingJobs.tickTime[strconv.Itoa(currentTick)] = "true"
+				}
+				currentTick++
+			}
+		}
+		fmt.Println(currentTick)
+
+		if scanner.Err() != nil {
+			log.Fatalf("Error while scanning file: %v", scanner.Err())
+		}
+		return RealtikTimingJobs
+	} else {
+		RealtikTimingJobs := jobTimings{
+			tickTime: make(map[string]string),
+		}
+
+		file, err := os.Open(filePath)
+		if err != nil {
+			log.Fatalf("Failed to open file: %v", err)
+		}
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			linesp := strings.Split(line, " ")
+			linenr, err := strconv.Atoi(linesp[0])
+			if err != nil {
+				panic(err)
+			}
+			RealtikTimingJobs.tickTime[strconv.Itoa(linenr)] = linesp[1]
+		}
+		if scanner.Err() != nil {
+			log.Fatalf("Error while scanning file: %v", scanner.Err())
+		}
+		return RealtikTimingJobs
+	}
 }
 
 func GetFileDataFromSavedData(fileName string) []opts.LineData {

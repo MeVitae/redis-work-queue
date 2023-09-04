@@ -1,7 +1,6 @@
 package graphs
 
 import (
-	"fmt"
 	"net/http"
 	"sync"
 
@@ -77,6 +76,7 @@ func StartPlotGraph(name string) *ChartData {
 }
 
 func (Cdata *ChartData) convertToIntSlice(data []int32) []opts.LineData {
+	data = groupData(data, 10)
 	numElements := len(data)
 	if Cdata.Config.showAllData == false && numElements > int(Cdata.Config.showLastNumberOfElements) {
 		numElements = int(Cdata.Config.showLastNumberOfElements)
@@ -90,13 +90,31 @@ func (Cdata *ChartData) convertToIntSlice(data []int32) []opts.LineData {
 	return lineDataSlice
 }
 
+func groupData(data []int32, groupHowMany int) (groupedData []int32) {
+	number := 0
+
+	for range data {
+		result := int32(0)
+		for i := 0; i < groupHowMany; i++ {
+			result += data[number]
+			number++
+			if number >= len(data) {
+				return
+			}
+		}
+		groupedData = append(groupedData, result/int32(groupHowMany))
+	}
+
+	return
+}
+
 func (Cdata *ChartData) convertToIntSliceCost(data []int32) []opts.LineData {
+	data = groupData(data, 10)
 	numElements := len(data)
 	if Cdata.Config.showAllData == false && numElements > int(50000) {
 		numElements = int(50000)
 	}
 
-	fmt.Println(data)
 	lineDataSlice := make([]opts.LineData, numElements)
 	for i := 0; i < numElements; i++ {
 		index := len(data) - numElements + i

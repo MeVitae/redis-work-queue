@@ -1,6 +1,8 @@
 package autoScallerSim
 
 import (
+	"go-auto-scaller-simulator/interfaces"
+	_ "go-auto-scaller-simulator/interfaces"
 	"sync"
 )
 
@@ -9,19 +11,13 @@ type deploymentList struct {
 	mu   sync.RWMutex
 }
 
-type DeploymentInterfaceAutoScaler interface {
-	GetScale(string) int32
-	GetReadyCounts() WorkerCounts
-	GetCounts() WorkerCounts
-}
-
 type WorkerCounts struct {
 	Base int32
 	Fast int32
 	Spot int32
 }
 
-func (workers *Workers) GetReadyCounts() (counts WorkerCounts) {
+func (workers *Workers) GetReady() (counts WorkerCounts) {
 	counts.Base = workers.GetReadyCount("base")
 	counts.Fast = workers.GetReadyCount("fast")
 	counts.Spot = workers.GetReadyCount("spot")
@@ -49,7 +45,7 @@ func (deployment *deploymentStruct) QueueLen() int {
 	return len(deployment.jobs)
 }
 
-func (workers *Workers) GetScale(deploymentName string) int32 {
+func (workers *Workers) GetRequest(deploymentName string) int32 {
 	workers.deploymentsList.mu.RLock()
 	defer workers.deploymentsList.mu.RUnlock()
 	return workers.deploymentsList.list[deploymentName]
@@ -144,7 +140,6 @@ func (workers *Workers) ProcessWorkersChange() {
 type Workers struct {
 	Mu sync.RWMutex
 	// deployments is the interface to get and set information about the k8s deployment.
-	Deployments DeploymentInterfaceAutoScaler
 	// baseName of the base k8s deployment.
 	BaseName string
 	// fastName of the fast k8s deployment.
@@ -167,6 +162,28 @@ type Workers struct {
 	deploymentsList deploymentList
 
 	MaxFast int32
+}
+
+func (workers *Workers) GetDeployment(wType string) interfaces.Deployment {
+	return &WorkerDeployment{
+		Workers:    workers,
+		WorkerType: wType,
+	}
+}
+
+type WorkerDeployment struct {
+	Workers    *Workers
+	WorkerType string
+}
+
+func (workersDeployment *WorkerDeployment) GetReady() int32 {
+	return workersDeployment.Workers.GetReadyCount(workersDeployment.WorkerType)
+}
+func (workersDeployment *WorkerDeployment) GetRequest() int32 {
+	return workersDeployment.Workers.GetRequest(workersDeployment.WorkerType)
+}
+func (workersDeployment *WorkerDeployment) SetRequest(count int32) {
+	workersDeployment.Workers.SetCount(workersDeployment.WorkerType, count)
 }
 
 func NewWorkers(deployment *deploymentStruct, finishjob chan job, Config Worker, WorkersConfig map[string]WorkerConfig) Workers {

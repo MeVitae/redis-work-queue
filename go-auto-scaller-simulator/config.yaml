@@ -1,119 +1,27 @@
-person:
-  NewWorkers:
-    appsV1Deployments: clientset.AppsV1().Deployments(namespace)
-    name: "person"
-    db: db
-    objectQueue: "cv_manager:object_queue"
-    processing: "cv_manager:object_queue:processing"
+expectedInputs:
+- StartProcess: counts
+  StartRange: 2
+
+- StartProcess: compute
+  StartRange: 3
+workers:
+  counts:
     Calculator:
-      Target: 50
-      SpotTarget: 15
-      Run: 6
+      Target: 3600
+      SpotTarget: 1200
+      Run: 200
       Spinup: 160
-    value: 12
-  ScalerSim:
-    PowerNeededMin: [60,100]
-    NextStage: "reading"
-    numberToSpawn:  1
-signature:
-  NewWorkers:
-    appsV1Deployments: clientset.AppsV1().Deployments(namespace)
-    name: "signature"
-    db: db
-    objectQueue: "cv_manager:signature_queue"
-    processing: "cv_manager:signature_queue:processing"
+    ScalerSim:
+      PowerNeededMin: [500,2500]
+      ChildWorker: Finish
+      NumberOfChildren:  1
+  compute:
     Calculator:
-      Target: 50
-      SpotTarget: 15
-      Run: 6
+      Target: 3600
+      SpotTarget: 1200
+      Run: 500
       Spinup: 160
-    value: 12
-  ScalerSim:
-    PowerNeededMin: [60,100]
-    NextStage: "reading"
-    numberToSpawn:  1
-section:
-  NewWorkers:
-    appsV1Deployments: clientset.AppsV1().Deployments(namespace)
-    name: "section"
-    db: db
-    objectQueue: "cv_manager:section_queue"
-    processing: "cv_manager:section_queue:processing"
-    Calculator:
-      Target: 30
-      SpotTarget: 10
-      Run: 1
-      Spinup: 160
-    value: 12
-  ScalerSim:
-    PowerNeededMin: [30,70]
-    NextStage: "reading"
-    numberToSpawn:  1
-reading:
-  NewWorkers:
-    appsV1Deployments: clientset.AppsV1().Deployments(namespace)
-    name: "reading"
-    db: db
-    objectQueue: "cv_manager:reading_queue"
-    processing: "cv_manager:reading_queue:processing"
-    Calculator:
-      Target: 30000
-      SpotTarget: 10000
-      Run: 400
-      Spinup: 160000
-    value: 12
-  ScalerSim:
-    PowerNeededMin: [2,5]
-    NextStage: "sectionClass"
-    numberToSpawn:  1
-ner:
-  NewWorkers:
-    appsV1Deployments: clientset.AppsV1().Deployments(namespace)
-    name: "ner"
-    db: db
-    objectQueue: "cv_manager:ner_queue"
-    processing: "cv_manager:ner_queue:processing"
-    Calculator:
-      Target: 120
-      SpotTarget: 60
-      Run: 30
-      Spinup: 160
-    value: 16
-  ScalerSim:
-    PowerNeededMin: [300,400]
-    NextStage: "featureExtraction"
-    numberToSpawn:  1
-sectionClass:
-  NewWorkers:
-    appsV1Deployments: clientset.AppsV1().Deployments(namespace)
-    name: "section-class"
-    db: db
-    objectQueue: "cv_manager:section_class_queue"
-    processing: "cv_manager:section_class_queue:processing"
-    Calculator:
-      Target: 30
-      SpotTarget: 10
-      Run: 5
-      Spinup: 160
-    value: 24
-  ScalerSim:
-    PowerNeededMin: [100,300]
-    NextStage: "ner"
-    numberToSpawn:  1
-featureExtraction:
-  NewWorkers:
-    appsV1Deployments: clientset.AppsV1().Deployments(namespace)
-    name: "feature-extraction"
-    db: db
-    objectQueue: "cv_manager:feature_extraction_queue"
-    processing: "cv_manager:feature_extraction_queue:processing"
-    Calculator:
-      Target: 30000
-      SpotTarget: 10000
-      Run: 650
-      Spinup: 160000
-    value: 12
-  ScalerSim:
-    PowerNeededMin: [1,4]
-    NextStage: "Finish"
-    numberToSpawn:  1
+    ScalerSim:
+      PowerNeededMin: [10,10000]
+      ChildWorker: Finish
+      NumberOfChildren:  1

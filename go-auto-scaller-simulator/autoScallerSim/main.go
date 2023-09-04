@@ -5,16 +5,20 @@ import (
 	"fmt"
 	"go-auto-scaller-simulator/graphs"
 	_ "go-auto-scaller-simulator/graphs"
+	"go-auto-scaller-simulator/interfaces"
+	"io/ioutil"
+	"log"
 	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
+	"gopkg.in/yaml.v2"
 )
 
 type document struct {
-	pages  int
-	images int
-	id     string
+	id string
 }
 
 type progress struct {
@@ -29,30 +33,58 @@ type SafeCounter struct {
 	progress map[string]progress
 }
 
+type WorkersConfig map[string]WorkerConfig
+
+func GetWorkersConfig(workersFile string) WorkersConfig {
+	data, _ := ioutil.ReadFile(workersFile)
+	var result WorkersConfig
+	err := yaml.Unmarshal([]byte(data), &result)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	return result
+}
+
+func GetProcessStarterConfig(PSFile string) (result ProcessStarter) {
+	data, _ := ioutil.ReadFile(PSFile)
+	err := yaml.Unmarshal([]byte(data), &result)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	return result
+}
+
 var docsNeedToBeDone = SafeCounter{progress: make(map[string]progress)}
 
-func createNewDocToProcess(chanel map[string]deploymentStruct) {
-	doc := document{
-		pages:  generateRandomNumber(1, 3),
-		images: 0,
-		id:     uuid.New().String(),
-	}
-	if generateRandomBool(1, 4) {
-		doc.images = generateRandomNumber(1, 5)
-	}
+func createNewDocToProcess(chanel map[string]deploymentStruct, processStarter ProcessStarterConfig) {
+	for _, processToStart := range processStarter {
+		doc := document{
+			id: uuid.New().String(),
+		}
 
+		// Lock so only one goroutine at a time can access the map c.v.
+		docsNeedToBeDone.mu.Lock()
+		docsNeedToBeDone.progress[doc.id] = progress{}
+		docsNeedToBeDone.mu.Unlock()
+		toStart := generateRandomNumber(0, processToStart.StartRange)
+		for i := 0; i < toStart; i++ {
+			chanel[processToStart.StartProcess].jobChan <- incomingJob{name: processToStart.StartProcess, time: 0, startAt: tick, myData: doc}
+		}
+	}
+}
+
+func createNewDocToProcessSpecific(chanel map[string]deploymentStruct, processStarter ProcessStarter) {
+	doc := document{
+		id: uuid.New().String(),
+	}
 	// Lock so only one goroutine at a time can access the map c.v.
 	docsNeedToBeDone.mu.Lock()
 	docsNeedToBeDone.progress[doc.id] = progress{}
 	docsNeedToBeDone.mu.Unlock()
-	for i := 0; i < doc.images; i++ {
-		chanel["person"].jobChan <- incomingJob{name: "PSD", time: 0, startAt: tick, myData: doc}
-	}
-	for i := 0; i < doc.pages; i++ {
-		chanel["signature"].jobChan <- incomingJob{name: "SD", time: 0, startAt: tick, myData: doc}
-		chanel["section"].jobChan <- incomingJob{name: "SD", time: 0, startAt: tick, myData: doc}
-
-	}
+	fmt.Println(processStarter)
+	chanel[processStarter.StartProcess].jobChan <- incomingJob{name: processStarter.StartProcess, time: 0, startAt: tick, myData: doc}
 
 }
 
@@ -85,12 +117,12 @@ type incomingJob struct {
 }
 
 type WorkerConfig struct {
-	TimetilDieRange [2]int
-	TimeTilStart    [2]int
-	Price           float32
+	TimetilDieRange [2]int  `yaml:"TimetilDieRange"`
+	TimeTilStart    [2]int  `yaml:"TimeTilStart"`
+	Price           float32 `yaml:"Price"`
 }
 
-var tick = 1
+var tick = 12000015
 
 func receiveJobs(Pod *deploymentStruct, incomingJobChan chan incomingJob, name string, Config Worker) {
 	for jobID := range incomingJobChan {
@@ -115,8 +147,9 @@ func receiveJobs(Pod *deploymentStruct, incomingJobChan chan incomingJob, name s
 	}
 }
 
-func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker, tickChan *chan *Workers, WorkersConfig map[string]WorkerConfig, graphInfoCH *chan graphs.GraphInfo) {
+func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker, tickChan *chan *Workers, WorkersConfig map[string]WorkerConfig, graphInfoCH *chan graphs.GraphInfo, sendWorkerBack chan *Workers) {
 	workers := NewWorkers(deployment, finishjob, Config, WorkersConfig)
+	sendWorkerBack <- &workers
 	myStats := statsStruct{}
 	meantimeTotal := 0
 	meantime := 0
@@ -180,7 +213,7 @@ func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker,
 					doc.done += 1
 					doc.ticksTaken += tick/10 - deployment.jobs[worker.workingon].startedAt/10
 					myStats.jobsDone++
-					myStats.seconds += myjob.myTicks / 10
+					myStats.seconds += tick/10 - deployment.jobs[worker.workingon].startedAt/10
 					docsNeedToBeDone.progress[myjob.MyData.id] = doc
 					docsNeedToBeDone.mu.Unlock()
 
@@ -222,26 +255,44 @@ type commingJobs struct {
 	JChan map[string]deploymentStruct
 }
 
-func Start(tickChannel *chan *Workers, config MainStruct, WorkersConfig map[string]WorkerConfig, GraphInfo *chan graphs.GraphInfo) {
+type SimulatedDeployments map[string]*Workers
+
+func (Deployment SimulatedDeployments) GetDeployment(wId string) interfaces.Deployment {
+	splittedString := strings.Split(wId, "/")
+	return Deployment[splittedString[0]].GetDeployment(splittedString[1])
+}
+func Start(tickChannel *chan *Workers, config MainStruct, WorkersConfig map[string]WorkerConfig, GraphInfo *chan graphs.GraphInfo, processStarter ProcessStarterConfig, simulatedDeployments map[string]*Workers) {
 	incommingChans := commingJobs{
 		JChan: make(map[string]deploymentStruct),
 	}
 	//fmt.Println(WorkersConfig)
 	jobFinish := make(chan job)
 	for index, _ := range config {
-		go Deployment(makeDepoloyment(index, &incommingChans), jobFinish, config[index], tickChannel, WorkersConfig, GraphInfo)
+		deployment := makeDepoloyment(index, &incommingChans)
+		receiveWorker := make(chan *Workers)
+		go Deployment(deployment, jobFinish, config[index], tickChannel, WorkersConfig, GraphInfo, receiveWorker)
+		workerDeployment := <-receiveWorker
+		simulatedDeployments[index] = workerDeployment
 	}
 
-	tikTimingJobs := getTickJobTimings()
+	tikTimingJobs := getTickJobTimings(false)
 
 	go jobFinishF(jobFinish, &incommingChans, config)
 	for {
-
-		if tikTimingJobs.tickTime[strconv.Itoa(tick)] {
+		time.Sleep(time.Nanosecond * 200)
+		if tikTimingJobs.tickTime[strconv.Itoa(tick)] == "true" {
 			incommingChans.mu.Lock()
-			createNewDocToProcess(incommingChans.JChan)
+			createNewDocToProcess(incommingChans.JChan, processStarter)
+			incommingChans.mu.Unlock()
+		} else if tikTimingJobs.tickTime[strconv.Itoa(tick)] != "" {
+			incommingChans.mu.Lock()
+			fmt.Println(tick)
+			toStart := ProcessStarter{StartProcess: tikTimingJobs.tickTime[strconv.Itoa(tick)]}
+
+			createNewDocToProcessSpecific(incommingChans.JChan, toStart)
 			incommingChans.mu.Unlock()
 		}
+
 		tick++
 		for jname, _ := range incommingChans.JChan {
 			incommingChans.JChan[jname].tickChan <- tick
@@ -269,7 +320,7 @@ func jobFinishF(jobFinish chan job, incommingJobsChann *commingJobs, config Main
 		incommingJobsChann.mu.Lock()
 		incommingJobsChan := incommingJobsChann.JChan
 
-		if config[job.jobType].ScalerSim.NextStage == "Finish" {
+		if config[job.jobType].ScalerSim.ChildWorker == "Finish" {
 
 			docsNeedToBeDone.mu.RLock()
 			if docsNeedToBeDone.progress[job.MyData.id].done == docsNeedToBeDone.progress[job.MyData.id].haveToBeDone && docsNeedToBeDone.progress[job.MyData.id].haveToBeDone > 0 {
@@ -281,7 +332,7 @@ func jobFinishF(jobFinish chan job, incommingJobsChann *commingJobs, config Main
 			}
 			docsNeedToBeDone.mu.RUnlock()
 		} else {
-			incommingJobsChan[config[job.jobType].ScalerSim.NextStage].jobChan <- incomingJob{name: config[job.jobType].ScalerSim.NextStage, time: job.myTicks, startAt: job.startedAt, myData: job.MyData}
+			incommingJobsChan[config[job.jobType].ScalerSim.ChildWorker].jobChan <- incomingJob{name: config[job.jobType].ScalerSim.ChildWorker, time: job.myTicks, startAt: job.startedAt, myData: job.MyData}
 		}
 		incommingJobsChann.JChan = incommingJobsChan
 		incommingJobsChann.mu.Unlock()

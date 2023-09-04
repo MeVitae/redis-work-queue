@@ -5,8 +5,8 @@ import (
 	"go-auto-scaller-simulator/autoScallerSim"
 	"go-auto-scaller-simulator/graphs"
 	_ "go-auto-scaller-simulator/graphs"
-	"io/ioutil"
 	"math"
+	_ "os"
 )
 
 type WorkerCounts struct {
@@ -96,24 +96,6 @@ func (slowdown *SlowDown) ScaleTo(current autoScallerSim.WorkerCounts) autoScall
 	return ret
 }
 
-var ConfigWorker = map[string]autoScallerSim.WorkerConfig{
-	"base": {
-		TimetilDieRange: [2]int{-1, -1},
-		TimeTilStart:    [2]int{1000, 1300},
-		Price:           1,
-	},
-	"spot": {
-		TimetilDieRange: [2]int{1300000, 2900000},
-		TimeTilStart:    [2]int{1000, 1300},
-		Price:           0.15,
-	},
-	"fast": {
-		TimetilDieRange: [2]int{-1, -1},
-		TimeTilStart:    [2]int{1000, 1100},
-		Price:           1.2,
-	},
-}
-
 // Workers are a set of 3 k8s deployments: base, fast and spot. These are responsible for handling the
 // jobs from a job queue in a Redis database.
 
@@ -131,8 +113,8 @@ func GetCounts() (counts WorkerCounts, err error, workers *autoScallerSim.Worker
 	return
 }
 
-// GetReadyCounts returns the current number of workers which are actually ready.
-func GetReadyCounts() (counts WorkerCounts, err error, workers *autoScallerSim.Workers) {
+// GetReady returns the current number of workers which are actually ready.
+func GetReady() (counts WorkerCounts, err error, workers *autoScallerSim.Workers) {
 	counts.Base = workers.GetReadyCount("base")
 	counts.Fast = workers.GetReadyCount("fast")
 	counts.Spot = workers.GetReadyCount("spot")
@@ -148,7 +130,7 @@ func (autoScaller *autoScallerStruct) Tick(graph *graphs.ChartData) {
 
 	counts := autoScaller.workers.GetCounts()
 
-	readyCounts := autoScaller.workers.GetReadyCounts()
+	readyCounts := autoScaller.workers.GetReady()
 	// Determine the current length of the work queue
 
 	qlen := autoScaller.workers.Deployment.QueueLen()
@@ -211,8 +193,10 @@ func manageGraphChan(graph *map[string]*graphs.ChartData, graphData *chan graphs
 }
 
 func main() {
-	data, _ := ioutil.ReadFile("config.yaml")
-	config := autoScallerSim.ReadYaml(data)
+	WorkersConfig := autoScallerSim.GetWorkersConfig("workers.yaml")
+	deployments := make(autoScallerSim.SimulatedDeployments)
+
+	config := autoScallerSim.GetConfig("config.yaml")
 	tickChan := make(chan *autoScallerSim.Workers, 5)
 	graphChan := make(chan graphs.GraphInfo)
 	deploymentGraphs := make(map[string]*graphs.ChartData)
@@ -222,20 +206,20 @@ func main() {
 	}
 	tick := 0
 	//NChart := graphs.StartPlotGraph(deployment.podType)
-	for index, _ := range *config {
+	for index, _ := range config.MainStruct {
 		fmt.Println(index)
 		(deploymentGraphs)[index] = graphs.StartPlotGraph(index)
 	}
 	go manageGraphChan(&deploymentGraphs, &graphChan)
-	go autoScallerSim.Start(&tickChan, *config, ConfigWorker, &graphChan)
+	go autoScallerSim.Start(&tickChan, *&config.MainStruct, WorkersConfig, &graphChan, config.ProcessStarterConfig, deployments)
 	for elem := range tickChan {
 		tick++
 		autoScaller.workers = elem
 		autoScaller.calculator = Calculator{
-			Target:     int32((*config)[elem.DepName].CalculatorY.Target),
-			SpotTarget: int32((*config)[elem.DepName].CalculatorY.SpotTarget),
-			Run:        int32((*config)[elem.DepName].CalculatorY.Run),
-			Spinup:     int32((*config)[elem.DepName].CalculatorY.Spinup),
+			Target:     int32((config.MainStruct)[elem.DepName].CalculatorY.Target),
+			SpotTarget: int32((config.MainStruct)[elem.DepName].CalculatorY.SpotTarget),
+			Run:        int32((config.MainStruct)[elem.DepName].CalculatorY.Run),
+			Spinup:     int32((config.MainStruct)[elem.DepName].CalculatorY.Spinup),
 		}
 		deploymentGraphs[elem.DepName].Ticks = append(deploymentGraphs[elem.DepName].Ticks, int32(tick))
 		autoScaller.Tick((deploymentGraphs)[elem.DepName])
