@@ -19,7 +19,7 @@ type ChartData struct {
 	Seconds      []int32
 	Ticks        []int32
 	Jobs         []int32
-	Cost         []int32
+	Cost         []float32
 	ReadyWorkers []int32
 	Workers      []int32
 	Name         string
@@ -46,8 +46,8 @@ func httpserver(w http.ResponseWriter, _ *http.Request, Cdata *ChartData) {
 		AddSeries("Ready Workers", Cdata.convertToIntSlice(Cdata.ReadyWorkers)).
 		SetSeriesOptions(charts.WithLineChartOpts(opts.LineChart{Smooth: false}))
 	Cost := charts.NewLine()
-	Cost.SetXAxis(Cdata.convertToIntSliceCost(Cdata.Ticks)).
-		AddSeries("Cost", Cdata.convertToIntSliceCost(Cdata.Cost)).
+	Cost.SetXAxis(Cdata.convertToIntSliceSetNumber(Cdata.Ticks, len(Cdata.Cost))).
+		AddSeries("Cost in £", Cdata.convertToIntSliceCost(Cdata.Cost)).
 		SetSeriesOptions(charts.WithLineChartOpts(opts.LineChart{Smooth: false}))
 	Cost.Render(w)
 	TotalTime := charts.NewLine()
@@ -65,7 +65,7 @@ func StartPlotGraph(name string) *ChartData {
 		Name: name,
 		Config: CharDisplayConfing{
 			showAllData:              false,
-			showLastNumberOfElements: 1000,
+			showLastNumberOfElements: 50000,
 		},
 	}
 	go http.HandleFunc("/"+name, func(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +73,21 @@ func StartPlotGraph(name string) *ChartData {
 	})
 	go http.ListenAndServe(":8081", nil)
 	return &Cdata
+}
+
+func (Cdata *ChartData) convertToIntSliceSetNumber(data []int32, setNumber int) []opts.LineData {
+	data = groupData(data, 10)
+	numElements := len(data)
+	if Cdata.Config.showAllData == false && numElements > int(setNumber) {
+		numElements = int(setNumber)
+	}
+
+	lineDataSlice := make([]opts.LineData, numElements)
+	for i := 0; i < numElements; i++ {
+		index := len(data) - numElements + i
+		lineDataSlice[i] = opts.LineData{Value: data[index]}
+	}
+	return lineDataSlice
 }
 
 func (Cdata *ChartData) convertToIntSlice(data []int32) []opts.LineData {
@@ -108,8 +123,7 @@ func groupData(data []int32, groupHowMany int) (groupedData []int32) {
 	return
 }
 
-func (Cdata *ChartData) convertToIntSliceCost(data []int32) []opts.LineData {
-	data = groupData(data, 10)
+func (Cdata *ChartData) convertToIntSliceCost(data []float32) []opts.LineData {
 	numElements := len(data)
 	if Cdata.Config.showAllData == false && numElements > int(50000) {
 		numElements = int(50000)
@@ -126,5 +140,5 @@ func (Cdata *ChartData) convertToIntSliceCost(data []int32) []opts.LineData {
 type GraphInfo struct {
 	Deployment string
 	DataType   string
-	Data       int32
+	Data       float32
 }

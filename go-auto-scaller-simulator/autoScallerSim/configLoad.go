@@ -27,9 +27,12 @@ type ProcessStarter struct {
 }
 type ProcessStarterConfig []ProcessStarter
 type ScalerSim struct {
-	PowerNeededMin   []int  `yaml:"PowerNeededMin"`
-	ChildWorker      string `yaml:"ChildWorker"`
-	NumberOfChildren int    `yaml:"NumberOfChildren"`
+	PowerNeededMin         []int   `yaml:"PowerNeededMin"`
+	ChildWorker            string  `yaml:"ChildWorker"`
+	NumberOfChildren       int     `yaml:"NumberOfChildren"`
+	PricePerHour           float32 `yaml:"BasePricePerHour"`
+	SpotTimesCheaper       float32 `yaml:"SpotTimesCheaper"`
+	FastTimesMoreExpensive float32 `yaml:"FastTimesMoreExpensive"`
 }
 type WorkerCofig struct {
 	MainStruct           `yaml:"workers"`

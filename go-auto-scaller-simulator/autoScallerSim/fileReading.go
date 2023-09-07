@@ -18,20 +18,19 @@ type jobTimings struct {
 }
 
 func getTickJobTimings(mod bool) jobTimings {
+	file, err := os.Open(filePath)
+	if err != nil {
+		log.Fatalf("Failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	RealtikTimingJobs := jobTimings{
+		tickTime: make(map[string]string),
+	}
 	if mod {
 		currentTick := 0
-		RealtikTimingJobs := jobTimings{
-			tickTime: make(map[string]string),
-		}
-
-		file, err := os.Open(filePath)
-		if err != nil {
-			log.Fatalf("Failed to open file: %v", err)
-		}
-		defer file.Close()
-
-		scanner := bufio.NewScanner(file)
-
 		tikTimingJobs := jobTimings{
 			tickTime: make(map[string]string),
 		}
@@ -63,18 +62,7 @@ func getTickJobTimings(mod bool) jobTimings {
 		}
 		return RealtikTimingJobs
 	} else {
-		RealtikTimingJobs := jobTimings{
-			tickTime: make(map[string]string),
-		}
-
-		file, err := os.Open(filePath)
-		if err != nil {
-			log.Fatalf("Failed to open file: %v", err)
-		}
-		defer file.Close()
-
-		scanner := bufio.NewScanner(file)
-
+		biggest := 0
 		for scanner.Scan() {
 			line := scanner.Text()
 			linesp := strings.Split(line, " ")
@@ -82,7 +70,15 @@ func getTickJobTimings(mod bool) jobTimings {
 			if err != nil {
 				panic(err)
 			}
+			biggest = linenr
 			RealtikTimingJobs.tickTime[strconv.Itoa(linenr)] = linesp[1]
+		}
+		for i, data := range RealtikTimingJobs.tickTime {
+			if RealtikTimingJobs.tickTime[i] != "" {
+				num, _ := strconv.Atoi(i)
+				RealtikTimingJobs.tickTime[strconv.Itoa(num+biggest)] = data
+
+			}
 		}
 		if scanner.Err() != nil {
 			log.Fatalf("Error while scanning file: %v", scanner.Err())
