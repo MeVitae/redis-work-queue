@@ -44,6 +44,7 @@ func NewAutoScale(
 		jobs[name] = &job
 	}
 	order, err := config.GetScaleOrder()
+	fmt.Println("Job scaling order is:", order)
 	return &AutoScale{
 		order: order,
 		jobs:  jobs,
@@ -58,6 +59,9 @@ func (autoscaler *AutoScale) Scale(ctx context.Context, time int64) error {
 	// It's important to scale in the DAG-derived order, so that we have always computed the
 	// incoming rates before scaling.
 	for _, jobName := range autoscaler.order {
+		fmt.Println("----------------------------------------------------------------------")
+		fmt.Println("Scaling job:", jobName)
+
 		// Get the incoming rate if one has already been stored
 		incomingRate, ok := incomingRates[jobName]
 		if !ok {
@@ -108,7 +112,7 @@ type job struct {
 func (job *job) Scale(ctx context.Context, time int64, incomingRate float32) (float32, error) {
 	qlen, processing, err := job.Queue.Counts(ctx)
 	qlen += processing
-	fmt.Printf("Scaling %s. Queue length %d (including %d being processed)", job.QueueName, qlen, processing)
+	fmt.Printf("Scaling %s. Queue length %d (including %d being processed)\n", job.QueueName, qlen, processing)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get queue length: %w", err)
 	}
@@ -177,7 +181,7 @@ func (tier *deploymentTier) Scale(
 	// If we have no choice over the number of workers, just set it.
 	if tier.MinScale == tier.MaxScale {
 		requestedScale = tier.MaxScale
-		fmt.Println("Scaling to", requestedScale)
+		fmt.Println("Scaling to", requestedScale, "(fixed scale)")
 		err = tier.Deployment.SetRequest(ctx, requestedScale)
 		if err != nil {
 			err = fmt.Errorf("failed to set scale request: %w", err)
@@ -238,6 +242,11 @@ func (tier *deploymentTier) Scale(
 func idealScale(targetTime, runTime, qlen int32) int32 {
 	// ceil(qlen * runTime / targetTime)
 	// Fun fact, with ceil(a/b) = floor((a-1)/b) + 1
+	// There's one caveat: integer division rounds towards 0, so we need a special case for when
+	// qlen == 0
+	if qlen == 0 {
+		return 0
+	}
 	return (qlen*runTime-1)/targetTime + 1
 }
 
@@ -313,11 +322,11 @@ type Config struct {
 
 type JobConfig struct {
 	// WorkQueueName is the name of the work queue to scale for.
-	QueueName string
+	QueueName string `yaml:"queueName"`
 	// DeploymentTiers of the workers running this job.
-	DeploymentTiers []DeploymentTierConfig
+	DeploymentTiers []DeploymentTierConfig `yaml:"deploymentTiers"`
 	// RunTime is the average time taken for a job to complete on a single worker.
-	RunTime int32
+	RunTime int32 `yaml:"runTime"`
 	// Children is a map of other job names to the average number of jobs of that type spawned by
 	// one job of this type.
 	Children map[string]float32
@@ -397,14 +406,14 @@ func (config *Config) GetScaleOrder() (order []string, err error) {
 }
 
 type DeploymentTierConfig struct {
-	DeploymentName string
-	MinScale       int32
-	MaxScale       int32
-	SpinupTime     int32
-	TargetTime     int32
+	DeploymentName string `yaml:"deploymentName"`
+	MinScale       int32  `yaml:"minScale"`
+	MaxScale       int32  `yaml:"maxScale"`
+	SpinupTime     int32  `yaml:"spinupTime"`
+	TargetTime     int32  `yaml:"targetTime"`
 	// ManualSlowdownDuration sets the duration of the window for SlowDown.
 	// If 0, this is set automatically based on TargetTime.
-	ManualSlowdownDuration int32
+	ManualSlowdownDuration int32 `yaml:"manualSlowdownDuration"`
 }
 
 // SlowdownDuration returns the duration of the window for SlowDown.
