@@ -139,6 +139,7 @@ func (job *job) Scale(ctx context.Context, time int64, incomingRate float32) (fl
 type deploymentTier struct {
 	Deployment interfaces.Deployment
 	SlowDown   slowDown
+	SlowUp     slowDown
 	DeploymentTierConfig
 }
 
@@ -154,9 +155,14 @@ func deploymentTierFromConfig(
 	if err != nil {
 		return deploymentTier{}, fmt.Errorf("failed to get deployment %s: %w", config.DeploymentName, err)
 	}
+	var slowup slowDown
+	if config.SlowupDuration > 0 {
+		slowup = NewSlowDown()
+	}
 	return deploymentTier{
 		Deployment:           deployment,
 		SlowDown:             NewSlowDown(),
+		SlowUp:               slowup,
 		DeploymentTierConfig: config,
 	}, nil
 }
@@ -223,6 +229,10 @@ func (tier *deploymentTier) Scale(
 	// Calculate the actual number of workers to request
 	tier.SlowDown.Push(currentTime-tier.SlowdownDuration(jobRunTime, qlen), currentTime, idealScale)
 	scale := tier.SlowDown.GetScale()
+	if tier.SlowupDuration > 0 {
+		tier.SlowUp.Push(currentTime-tier.SlowupDuration, currentTime, scale)
+		scale = tier.SlowUp.GetMinScale()
+	}
 	if scale < tier.MinScale {
 		scale = tier.MinScale
 	}
@@ -307,6 +317,20 @@ func (slowdown *slowDown) GetScale() int32 {
 	scale := int32(0)
 	for _, req := range slowdown.requests {
 		if req.scale > scale {
+			scale = req.scale
+		}
+	}
+	return scale
+}
+
+// GetScale returns the lowest scale of all the stored requests.
+func (slowdown *slowDown) GetMinScale() int32 {
+	if len(slowdown.requests) == 0 {
+		return 0
+	}
+	scale := slowdown.requests[0].scale
+	for _, req := range slowdown.requests {
+		if req.scale < scale {
 			scale = req.scale
 		}
 	}
@@ -414,6 +438,9 @@ type DeploymentTierConfig struct {
 	// ManualSlowdownDuration sets the duration of the window for SlowDown.
 	// If 0, this is set automatically based on TargetTime.
 	ManualSlowdownDuration int32 `yaml:"manualSlowdownDuration"`
+	// SlowupDuration sets the duration of the window for reversed SlowDown (slow scaling up).
+	// If 0, slowup isn't used.
+	SlowupDuration int64 `yaml:"slowupDuration"`
 }
 
 // SlowdownDuration returns the duration of the window for SlowDown.
