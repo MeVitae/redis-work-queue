@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"go-auto-scaller-simulator/autoScallerSim"
 	"go-auto-scaller-simulator/graphs"
 	_ "go-auto-scaller-simulator/graphs"
@@ -183,9 +182,9 @@ func manageGraphChan(graph *map[string]*graphs.ChartData, graphData *chan graphs
 	for elem := range *graphData {
 		switch elem.DataType {
 		case "TotalSeconds":
-			(*graph)[elem.Deployment].TotalSeconds = append((*graph)[elem.Deployment].TotalSeconds, elem.Data)
+			(*graph)[elem.Deployment].TotalSeconds = append((*graph)[elem.Deployment].TotalSeconds, int32(elem.Data))
 		case "Seconds":
-			(*graph)[elem.Deployment].Seconds = append((*graph)[elem.Deployment].Seconds, elem.Data)
+			(*graph)[elem.Deployment].Seconds = append((*graph)[elem.Deployment].Seconds, int32(elem.Data))
 		case "Cost":
 			(*graph)[elem.Deployment].Cost = append((*graph)[elem.Deployment].Cost, elem.Data) // Fixed this line
 		}
@@ -207,15 +206,16 @@ func main() {
 	tick := 0
 	//NChart := graphs.StartPlotGraph(deployment.podType)
 	for index, _ := range config.MainStruct {
-		fmt.Println(index)
+		//fmt.Println(index)
 		(deploymentGraphs)[index] = graphs.StartPlotGraph(index)
 	}
 	go manageGraphChan(&deploymentGraphs, &graphChan)
 	go autoScallerSim.Start(&tickChan, *&config.MainStruct, WorkersConfig, &graphChan, config.ProcessStarterConfig, deployments)
 	for elem := range tickChan {
-
-		fmt.Println(elem.GetDeployment("fast").GetRequest(), "123") // here
-
+		if deployments.GetDeployment("counts/fast").GetRequest() > 0 {
+			//fmt.Println(deployments.GetDeployment("counts/fast").GetRequest(), elem.DepName)
+			//fmt.Println(elem.GetDeployment("fast").GetRequest(), "123") // here
+		}
 		tick++
 		autoScaller.workers = elem
 		autoScaller.calculator = Calculator{

@@ -15,6 +15,9 @@ workers:
       PowerNeededMin: [500,2500]
       ChildWorker: Finish
       NumberOfChildren:  1
+      BasePricePerHour: 0.0744
+      SpotTimesCheaper: 4
+      FastTimesMoreExpensive: 1.3
   compute:
     Calculator:
       Target: 3600
@@ -25,3 +28,6 @@ workers:
       PowerNeededMin: [10,10000]
       ChildWorker: Finish
       NumberOfChildren:  1
+      BasePricePerHour: 0.1144
+      SpotTimesCheaper: 4
+      FastTimesMoreExpensive: 1.3

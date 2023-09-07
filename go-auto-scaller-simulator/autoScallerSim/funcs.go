@@ -12,10 +12,16 @@ func generateRandomNumber(min, max int) int {
 	return min + rand.Intn(max-min+1)
 }
 
-func (deployment *deploymentStruct) CalculateCost() (cost float32) {
+func (deployment *deploymentStruct) CalculateCost(pricePerHour float32, spotPrice float32, fastPrice float32) (cost float32) {
 	for _, worker := range deployment.workers {
 		//fmt.Println(worker.cost)
-		cost += worker.cost
+		if worker.wtype == "spot" {
+			cost += (pricePerHour / 10) / spotPrice
+		} else if worker.wtype == "fast" {
+			cost += (pricePerHour / 10) * fastPrice
+		} else {
+			cost += pricePerHour / 10
+		}
 	}
 	return
 }

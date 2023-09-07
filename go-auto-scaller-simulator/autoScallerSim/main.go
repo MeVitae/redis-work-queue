@@ -83,7 +83,6 @@ func createNewDocToProcessSpecific(chanel map[string]deploymentStruct, processSt
 	docsNeedToBeDone.mu.Lock()
 	docsNeedToBeDone.progress[doc.id] = progress{}
 	docsNeedToBeDone.mu.Unlock()
-	fmt.Println(processStarter)
 	chanel[processStarter.StartProcess].jobChan <- incomingJob{name: processStarter.StartProcess, time: 0, startAt: tick, myData: doc}
 
 }
@@ -153,7 +152,8 @@ func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker,
 	myStats := statsStruct{}
 	meantimeTotal := 0
 	meantime := 0
-	var cost int32
+	var lastCost float32
+	var cost float32
 	go receiveJobs(deployment, deployment.jobChan, deployment.podType, Config)
 	fmt.Println(deployment.podType, "is ready")
 
@@ -161,18 +161,21 @@ func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker,
 		// every 5 real seconds do a auto scaller processing tick.
 
 		if tick%50 == 0 {
-			*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "Cost", Data: cost}
+			if lastCost != cost {
+				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "Cost", Data: cost}
+				lastCost = cost
+			}
 			if stats.seconds != 0 && myStats.seconds != 0 && myStats.jobsDone != 0 && stats.jobsDone != 0 {
 				meantimeTotal = stats.seconds / stats.jobsDone
-				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "TotalSeconds", Data: int32(meantimeTotal)}
+				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "TotalSeconds", Data: float32(meantimeTotal)}
 				meantime = myStats.seconds / 10 / myStats.jobsDone / 10
-				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "Seconds", Data: int32(meantime)}
+				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "Seconds", Data: float32(meantime)}
 				myStats.jobsDone = 0
 				myStats.seconds = 0
 				//fmt.Println("View: ", ":8081/", deployment.podType, "| number of jobs:", strconv.Itoa(len(deployment.jobs)), "| number of workers:", len(deployment.workers), "| deployment:", deployment.podType, "| job done mean time:", meantime, "| overall job done time:", meantimeTotal)
 			} else {
-				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "TotalSeconds", Data: int32(meantimeTotal)}
-				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "Seconds", Data: int32(meantime)}
+				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "TotalSeconds", Data: float32(meantimeTotal)}
+				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "Seconds", Data: float32(meantime)}
 
 			}
 			*tickChan <- &workers
@@ -184,8 +187,7 @@ func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker,
 			deployment.jobs[id] = job
 		}
 
-		cost += int32(deployment.CalculateCost())
-
+		cost += deployment.CalculateCost(Config.ScalerSim.PricePerHour/3600, Config.ScalerSim.SpotTimesCheaper, Config.ScalerSim.FastTimesMoreExpensive)
 		for Wid, worker := range deployment.workers {
 
 			if worker.timeTilStart > 0 {
@@ -286,7 +288,6 @@ func Start(tickChannel *chan *Workers, config MainStruct, WorkersConfig map[stri
 			incommingChans.mu.Unlock()
 		} else if tikTimingJobs.tickTime[strconv.Itoa(tick)] != "" {
 			incommingChans.mu.Lock()
-			fmt.Println(tick)
 			toStart := ProcessStarter{StartProcess: tikTimingJobs.tickTime[strconv.Itoa(tick)]}
 
 			createNewDocToProcessSpecific(incommingChans.JChan, toStart)
