@@ -4,6 +4,7 @@ package scale
 import (
 	"context"
 
+	autoscaling "k8s.io/api/autoscaling/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	apps "k8s.io/client-go/kubernetes/typed/apps/v1"
@@ -72,11 +73,21 @@ func (deployment Deployment) GetRequest(ctx context.Context) (int32, error) {
 }
 
 func (deployment Deployment) SetRequest(ctx context.Context, count int32) error {
-	scale, err := deployment.deployments.GetScale(ctx, deployment.name, meta.GetOptions{})
-	if err != nil {
-		return err
+	var err error
+	for attempt := 0; attempt < 8; attempt++ {
+		// Load the current scale
+		var scale *autoscaling.Scale
+		scale, err = deployment.deployments.GetScale(ctx, deployment.name, meta.GetOptions{})
+		if err != nil {
+			return err
+		}
+		// Update the number of replicas
+		scale.Spec.Replicas = count
+		// Attempt to update it, retrying upto 8 times if it fails
+		_, err = deployment.deployments.UpdateScale(ctx, deployment.name, scale, meta.UpdateOptions{})
+		if err == nil {
+			return nil
+		}
 	}
-	scale.Spec.Replicas = count
-	_, err = deployment.deployments.UpdateScale(ctx, deployment.name, scale, meta.UpdateOptions{})
 	return err
 }
