@@ -34,10 +34,11 @@ func NewAutoScale(
 	workQueues WorkQueues,
 	deployments interfaces.Deployments,
 	config Config,
+	time int64,
 ) (*AutoScale, error) {
 	jobs := make(map[string]*job, len(config.Jobs))
 	for name, jobConfig := range config.Jobs {
-		job, err := jobConfig.ToJob(ctx, workQueues, deployments)
+		job, err := jobConfig.ToJob(ctx, workQueues, deployments, time)
 		if err != nil {
 			return nil, fmt.Errorf("failed to construct job %s: %w", name, err)
 		}
@@ -147,6 +148,7 @@ func deploymentTierFromConfig(
 	ctx context.Context,
 	deployments interfaces.Deployments,
 	config DeploymentTierConfig,
+	time int64,
 ) (deploymentTier, error) {
 	if config.TargetTime == 0 && config.MinScale != config.MaxScale {
 		panic("TargetTime cannot be 0 if MinScale != MaxScale")
@@ -158,6 +160,13 @@ func deploymentTierFromConfig(
 	var slowup slowDown
 	if config.SlowupDuration > 0 {
 		slowup = NewSlowDown()
+		// Add an initial entry with the current number of workers
+		// Without the initial entry, slowup will immediately scale up upon the first request!
+		currentScale, err := deployment.GetRequest(ctx)
+		if err != nil {
+			return deploymentTier{}, fmt.Errorf("failed to get initial count for %s slowup: %w", config.DeploymentName, err)
+		}
+		slowup.Push(0, time, currentScale)
 	}
 	return deploymentTier{
 		Deployment:           deployment,
@@ -182,7 +191,12 @@ func (tier *deploymentTier) Scale(
 		err = fmt.Errorf("failed to get ready count: %w", err)
 		return
 	}
-	fmt.Println("Tier has", currentScale, "active workers")
+	requestedScale, err = tier.Deployment.GetRequest(ctx)
+	if err != nil {
+		err = fmt.Errorf("failed to get requested count: %w", err)
+		return
+	}
+	fmt.Println("Tier has", currentScale, "active workers of", requestedScale, "requested")
 
 	// If we have no choice over the number of workers, just set it.
 	if tier.MinScale == tier.MaxScale {
@@ -221,7 +235,11 @@ func (tier *deploymentTier) Scale(
 		idealScale = 1
 	}
 	// Remove the base worker count
-	idealScale -= requestedBaseWorkers
+	if tier.FlakyBaseWorkers {
+		idealScale -= currentBaseWorkers
+	} else {
+		idealScale -= requestedBaseWorkers
+	}
 	if idealScale < 0 {
 		idealScale = 0
 	}
@@ -294,14 +312,15 @@ func (slowdown *slowDown) Push(oldestTime, currentTime int64, scale int32) {
 		scale: scale,
 	}
 	// First, try to overwrite an old entry:
-	idx := 0
-	for idx < len(slowdown.requests) {
+	for idx := 0; idx < len(slowdown.requests); idx++ {
 		if slowdown.requests[idx].time < oldestTime {
 			slowdown.requests[idx] = req
 			// After overwiring an old entry, we need to clean up any other old entries:
 			for idx < len(slowdown.requests) {
 				if slowdown.requests[idx].time < oldestTime {
 					slowdown.requests = slices.Delete(slowdown.requests, idx, idx+1)
+				} else {
+					idx++
 				}
 			}
 			return
@@ -360,10 +379,11 @@ func (config *JobConfig) ToJob(
 	ctx context.Context,
 	workQueues WorkQueues,
 	deployments interfaces.Deployments,
+	time int64,
 ) (job, error) {
 	deploymentTiers := make([]deploymentTier, 0, len(config.DeploymentTiers))
 	for deploymentTierIdx, deploymentTierConfig := range config.DeploymentTiers {
-		tier, err := deploymentTierFromConfig(ctx, deployments, deploymentTierConfig)
+		tier, err := deploymentTierFromConfig(ctx, deployments, deploymentTierConfig, time)
 		if err != nil {
 			return job{}, fmt.Errorf("failed to construct deployment tier %v: %w", deploymentTierIdx, err)
 		}
@@ -441,6 +461,11 @@ type DeploymentTierConfig struct {
 	// SlowupDuration sets the duration of the window for reversed SlowDown (slow scaling up).
 	// If 0, slowup isn't used.
 	SlowupDuration int64 `yaml:"slowupDuration"`
+	// FlakyBaseWorkers, if true, indicates that the number of requested base workers shouldn't be
+	// relied upon. That is, the number of actually ready workers should be used instead. This
+	// shouldn't be used without the use of `SlowupDuration` in tendem, otherwise, when base workers
+	// are requested, they will also be requested
+	FlakyBaseWorkers bool `yaml:"flakyBaseWorkers"`
 }
 
 // SlowdownDuration returns the duration of the window for SlowDown.
