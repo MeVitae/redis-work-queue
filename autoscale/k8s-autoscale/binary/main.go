@@ -19,16 +19,16 @@ func main() {
 		configPath = os.Args[1]
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	autoscale, err := autoscale.InClusterAutoscaler(ctx, configPath)
+	startTime := time.Now()
+	autoscale, err := autoscale.InClusterAutoscaler(ctx, configPath, 0)
 	cancel()
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("Running")
-	startTime := time.Now()
 	for {
 		timeOffset := time.Since(startTime)
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		fmt.Println("======================================================================")
 		err = autoscale.Scale(ctx, timeOffset.Milliseconds())
 		if err != nil {
 			panic(err)

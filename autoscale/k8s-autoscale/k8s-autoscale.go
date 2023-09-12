@@ -11,6 +11,7 @@ import (
 	workqueue "github.com/mevitae/redis-work-queue/go"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/mevitae/redis-work-queue/autoscale/interfaces"
 	scale "github.com/mevitae/redis-work-queue/autoscale/k8s-scale"
 	"github.com/mevitae/redis-work-queue/autoscale/wqautoscale"
 )
@@ -64,6 +65,10 @@ type Config struct {
 	Redis redis.Options
 	// QueueNamePrefix is the prefix used for generating queue names.
 	QueueNamePrefix string
+	// SegmentedDeployments determines if the k8s deployments interface should be wrapped in `SegmentedDeployments`.
+	//
+	// This allows deployment counts to be segmented.
+	SegmentedDeployments bool `yaml:"segmentedDeployments"`
 	// Autoscale config.
 	Autoscale wqautoscale.Config
 }
@@ -83,7 +88,7 @@ func LoadConfig(configPath string) (Config, error) {
 
 // InClusterAutoscaler creates an autoscaler for scaling deployments within the cluster the process
 // is running within.
-func InClusterAutoscaler(ctx context.Context, configPath string) (*wqautoscale.AutoScale, error) {
+func InClusterAutoscaler(ctx context.Context, configPath string, time int64) (*wqautoscale.AutoScale, error) {
 	config, err := LoadConfig(configPath)
 	if err != nil {
 		return nil, err
@@ -96,6 +101,10 @@ func InClusterAutoscaler(ctx context.Context, configPath string) (*wqautoscale.A
 	if err != nil {
 		return nil, err
 	}
+	var deploymentsInterface interfaces.Deployments = deployments
+	if config.SegmentedDeployments {
+		deploymentsInterface = interfaces.NewSegmentedDeployments(deploymentsInterface)
+	}
 
-	return wqautoscale.NewAutoScale(ctx, workQueues, deployments, config.Autoscale)
+	return wqautoscale.NewAutoScale(ctx, workQueues, deploymentsInterface, config.Autoscale, time)
 }
