@@ -27,6 +27,26 @@ type ChartData struct {
 	Config       CharDisplayConfing
 }
 
+func (Cdata *ChartData) AddGraphData(dataType string, data float32) {
+	switch dataType {
+
+	case "TotalSeconds":
+		Cdata.TotalSeconds = append(Cdata.TotalSeconds, int32(data))
+	case "Seconds":
+		Cdata.Seconds = append(Cdata.Seconds, int32(data))
+	case "Cost":
+		Cdata.Cost = append(Cdata.Cost, data)
+	case "Tick":
+		Cdata.Ticks = append(Cdata.Ticks, int32(data))
+	case "Jobs":
+		Cdata.Jobs = append(Cdata.Jobs, int32(data))
+	case "Workers":
+		Cdata.Workers = append(Cdata.Workers, int32(data))
+	case "ReadyWorkers":
+		Cdata.ReadyWorkers = append(Cdata.ReadyWorkers, int32(data))
+	}
+}
+
 func httpserver(w http.ResponseWriter, _ *http.Request, Cdata *ChartData) {
 
 	Jobs_Seconds := charts.NewLine()

@@ -2,18 +2,18 @@ package autoScallerSim
 
 //  10 ticks == 1 second
 import (
+	"context"
 	"fmt"
 	"go-auto-scaller-simulator/graphs"
 	_ "go-auto-scaller-simulator/graphs"
-	"go-auto-scaller-simulator/interfaces"
 	"io/ioutil"
 	"log"
 	"strconv"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
+	wqInterfaces "github.com/mevitae/redis-work-queue/autoscale/interfaces"
+	wqautoscale "github.com/mevitae/redis-work-queue/autoscale/wqautoscale"
 	"gopkg.in/yaml.v2"
 )
 
@@ -58,7 +58,7 @@ func GetProcessStarterConfig(PSFile string) (result ProcessStarter) {
 
 var docsNeedToBeDone = SafeCounter{progress: make(map[string]progress)}
 
-func createNewDocToProcess(chanel map[string]deploymentStruct, processStarter ProcessStarterConfig) {
+func createNewDocToProcess(tick *int, chanel map[string]deploymentStruct, processStarter ProcessStarterConfig) {
 	for _, processToStart := range processStarter {
 		doc := document{
 			id: uuid.New().String(),
@@ -70,12 +70,12 @@ func createNewDocToProcess(chanel map[string]deploymentStruct, processStarter Pr
 		docsNeedToBeDone.mu.Unlock()
 		toStart := generateRandomNumber(0, processToStart.StartRange)
 		for i := 0; i < toStart; i++ {
-			chanel[processToStart.StartProcess].jobChan <- incomingJob{name: processToStart.StartProcess, time: 0, startAt: tick, myData: doc}
+			chanel[processToStart.StartProcess].jobChan <- incomingJob{name: processToStart.StartProcess, time: 0, startAt: *tick, myData: doc}
 		}
 	}
 }
 
-func createNewDocToProcessSpecific(chanel map[string]deploymentStruct, processStarter ProcessStarter) {
+func createNewDocToProcessSpecific(tick *int, chanel map[string]deploymentStruct, processStarter ProcessStarter) {
 	doc := document{
 		id: uuid.New().String(),
 	}
@@ -83,7 +83,7 @@ func createNewDocToProcessSpecific(chanel map[string]deploymentStruct, processSt
 	docsNeedToBeDone.mu.Lock()
 	docsNeedToBeDone.progress[doc.id] = progress{}
 	docsNeedToBeDone.mu.Unlock()
-	chanel[processStarter.StartProcess].jobChan <- incomingJob{name: processStarter.StartProcess, time: 0, startAt: tick, myData: doc}
+	chanel[processStarter.StartProcess].jobChan <- incomingJob{name: processStarter.StartProcess, time: 0, startAt: *tick, myData: doc}
 
 }
 
@@ -106,6 +106,26 @@ type job struct {
 	startAt     int32
 }
 
+func (deployments *SimulatedDeployments) GetWorkQueue(name string) wqautoscale.WorkQueue {
+
+	return (*deployments)[name].Deployment
+}
+
+func (deployment *deploymentStruct) Counts(context context.Context) (queueLen, processing int32, err error) {
+	deployment.mu.Lock()
+	defer deployment.mu.Unlock()
+	for _, job := range deployment.jobs {
+		if job.taken {
+			processing++
+		}
+	}
+	return int32(len(deployment.jobs)), processing, nil
+}
+
+func (deployment *deploymentStruct) GetWorkQueue(a string) {
+
+}
+
 // TODO: rename to deployment
 
 type incomingJob struct {
@@ -123,7 +143,7 @@ type WorkerConfig struct {
 
 var tick = 12000015
 
-func receiveJobs(Pod *deploymentStruct, incomingJobChan chan incomingJob, name string, Config Worker) {
+func receiveJobs(tick *int, Pod *deploymentStruct, incomingJobChan chan incomingJob, name string, Config Worker) {
 	for jobID := range incomingJobChan {
 		uuid := uuid.New()
 		Pod.mu.Lock()
@@ -134,7 +154,7 @@ func receiveJobs(Pod *deploymentStruct, incomingJobChan chan incomingJob, name s
 			myTicks:     jobID.time,
 			jobType:     name,
 			MyData:      jobID.myData,
-			startAt:     int32(tick),
+			startAt:     int32(*tick),
 		}
 		Pod.mu.Unlock()
 
@@ -146,7 +166,7 @@ func receiveJobs(Pod *deploymentStruct, incomingJobChan chan incomingJob, name s
 	}
 }
 
-func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker, tickChan *chan *Workers, WorkersConfig map[string]WorkerConfig, graphInfoCH *chan graphs.GraphInfo, sendWorkerBack chan *Workers) {
+func Deployment(tick *int, deployment *deploymentStruct, finishjob chan job, Config Worker, tickChan *chan *Workers, WorkersConfig map[string]WorkerConfig, graphInfoCH *chan graphs.GraphInfo, sendWorkerBack chan *Workers) {
 	workers := NewWorkers(deployment, finishjob, Config, WorkersConfig)
 	sendWorkerBack <- &workers
 	myStats := statsStruct{}
@@ -154,13 +174,13 @@ func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker,
 	meantime := 0
 	var lastCost float32
 	var cost float32
-	go receiveJobs(deployment, deployment.jobChan, deployment.podType, Config)
+	go receiveJobs(tick, deployment, deployment.jobChan, deployment.podType, Config)
 	fmt.Println(deployment.podType, "is ready")
 
 	for tick := range deployment.tickChan {
 		// every 5 real seconds do a auto scaller processing tick.
 
-		if tick%50 == 0 {
+		if tick%1000 == 0 {
 			if lastCost != cost {
 				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "Cost", Data: cost}
 				lastCost = cost
@@ -169,6 +189,7 @@ func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker,
 				meantimeTotal = stats.seconds / stats.jobsDone
 				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "TotalSeconds", Data: float32(meantimeTotal)}
 				meantime = myStats.seconds / 10 / myStats.jobsDone / 10
+				fmt.Println(myStats.seconds, "-----------")
 				*graphInfoCH <- graphs.GraphInfo{Deployment: deployment.podType, DataType: "Seconds", Data: float32(meantime)}
 				myStats.jobsDone = 0
 				myStats.seconds = 0
@@ -188,39 +209,41 @@ func Deployment(deployment *deploymentStruct, finishjob chan job, Config Worker,
 		}
 
 		cost += deployment.CalculateCost(Config.ScalerSim.PricePerHour/3600, Config.ScalerSim.SpotTimesCheaper, Config.ScalerSim.FastTimesMoreExpensive)
-		for Wid, worker := range deployment.workers {
-
-			if worker.timeTilStart > 0 {
+		deployment.mu.Unlock()
+		deployment.mu.Lock()
+		for Wid, _ := range deployment.workers {
+			workerCC := &deployment.workers[Wid]
+			if workerCC.timeTilStart > 0 {
 				//fmt.Println(worker.timeTilStart)
 				deployment.workers[Wid].timeTilStart -= 1
-			} else if worker.workingon == "" {
+			} else if workerCC.workingon == "" {
 
 				for id, job := range deployment.jobs {
 					if !job.taken {
 						job.taken = true
 						deployment.jobs[id] = job
-						deployment.workers[Wid].workingon = id
+						(workerCC).workingon = id
 						break
 					}
 				}
 			} else {
-				myjob := deployment.jobs[worker.workingon]
+				myjob := deployment.jobs[workerCC.workingon]
 				if myjob.powerNeeded > 0 {
-					myjob.powerNeeded -= worker.power
-					deployment.jobs[worker.workingon] = myjob
+					myjob.powerNeeded -= workerCC.power
+					deployment.jobs[workerCC.workingon] = myjob
 				} else {
 
 					docsNeedToBeDone.mu.Lock()
 					doc := docsNeedToBeDone.progress[myjob.MyData.id]
 					doc.done += 1
-					doc.ticksTaken += tick/10 - deployment.jobs[worker.workingon].startedAt/10
+					doc.ticksTaken += tick/10 - deployment.jobs[workerCC.workingon].startedAt/10
 					myStats.jobsDone++
-					myStats.seconds += tick/10 - deployment.jobs[worker.workingon].startedAt/10
+					myStats.seconds += tick/10 - deployment.jobs[workerCC.workingon].startedAt/10
 					docsNeedToBeDone.progress[myjob.MyData.id] = doc
 					docsNeedToBeDone.mu.Unlock()
 
-					finishjob <- deployment.jobs[worker.workingon]
-					delete(deployment.jobs, worker.workingon)
+					finishjob <- deployment.jobs[workerCC.workingon]
+					delete(deployment.jobs, workerCC.workingon)
 					deployment.workers[Wid].workingon = ""
 				}
 			}
@@ -236,6 +259,16 @@ type deploymentStruct struct {
 	podType  string
 	jobChan  chan incomingJob
 	tickChan chan int
+}
+
+func (deployment *deploymentStruct) GetWorkers() (readyWorkers int, workers int) {
+	for _, worker := range deployment.workers {
+		if worker.timeTilStart == 0 {
+			readyWorkers++
+		}
+		workers++
+	}
+	return
 }
 
 func makeDepoloyment(name string, incomingJobCh *commingJobs) (deployment *deploymentStruct) {
@@ -259,11 +292,12 @@ type commingJobs struct {
 
 type SimulatedDeployments map[string]*Workers
 
-func (Deployment SimulatedDeployments) GetDeployment(wId string) interfaces.Deployment {
-	splittedString := strings.Split(wId, "/")
-	return Deployment[splittedString[0]].GetDeployment(splittedString[1])
+func (Deployment *SimulatedDeployments) GetDeployment(context context.Context, wId string) (wqInterfaces.Deployment, error) {
+	(*Deployment)[wId].Mu.Lock()
+	defer (*Deployment)[wId].Mu.Unlock()
+	return (*Deployment)[wId].GetDeployment(wId)
 }
-func Start(tickChannel *chan *Workers, config MainStruct, WorkersConfig map[string]WorkerConfig, GraphInfo *chan graphs.GraphInfo, processStarter ProcessStarterConfig, simulatedDeployments map[string]*Workers) {
+func Start(tick *int, tickChannel *chan *Workers, config MainStruct, WorkersConfig map[string]WorkerConfig, GraphInfo *chan graphs.GraphInfo, processStarter ProcessStarterConfig, simulatedDeployments map[string]*Workers) {
 	incommingChans := commingJobs{
 		JChan: make(map[string]deploymentStruct),
 	}
@@ -272,7 +306,7 @@ func Start(tickChannel *chan *Workers, config MainStruct, WorkersConfig map[stri
 	for index, _ := range config {
 		deployment := makeDepoloyment(index, &incommingChans)
 		receiveWorker := make(chan *Workers)
-		go Deployment(deployment, jobFinish, config[index], tickChannel, WorkersConfig, GraphInfo, receiveWorker)
+		go Deployment(tick, deployment, jobFinish, config[index], tickChannel, WorkersConfig, GraphInfo, receiveWorker)
 		workerDeployment := <-receiveWorker
 		simulatedDeployments[index] = workerDeployment
 	}
@@ -281,25 +315,24 @@ func Start(tickChannel *chan *Workers, config MainStruct, WorkersConfig map[stri
 
 	go jobFinishF(jobFinish, &incommingChans, config)
 	for {
-		time.Sleep(time.Nanosecond * 200)
-		if tikTimingJobs.tickTime[strconv.Itoa(tick)] == "true" {
+		if tikTimingJobs.tickTime[strconv.Itoa(*tick)] == "true" {
 			incommingChans.mu.Lock()
-			createNewDocToProcess(incommingChans.JChan, processStarter)
+			createNewDocToProcess(tick, incommingChans.JChan, processStarter)
 			incommingChans.mu.Unlock()
-		} else if tikTimingJobs.tickTime[strconv.Itoa(tick)] != "" {
+		} else if tikTimingJobs.tickTime[strconv.Itoa(*tick)] != "" {
 			incommingChans.mu.Lock()
-			toStart := ProcessStarter{StartProcess: tikTimingJobs.tickTime[strconv.Itoa(tick)]}
+			toStart := ProcessStarter{StartProcess: tikTimingJobs.tickTime[strconv.Itoa(*tick)]}
 
-			createNewDocToProcessSpecific(incommingChans.JChan, toStart)
+			createNewDocToProcessSpecific(tick, incommingChans.JChan, toStart)
 			incommingChans.mu.Unlock()
 		}
 
-		tick++
+		*tick++
 		for jname, _ := range incommingChans.JChan {
-			incommingChans.JChan[jname].tickChan <- tick
+			incommingChans.JChan[jname].tickChan <- *tick
 		}
 
-		if tick%1000 == 0 {
+		if *tick%1000 == 0 {
 			stats.mu.Lock()
 			stats.jobsDone = 0
 			stats.seconds = 0

@@ -1,9 +1,11 @@
 package autoScallerSim
 
 import (
-	"go-auto-scaller-simulator/interfaces"
+	"context"
 	_ "go-auto-scaller-simulator/interfaces"
 	"sync"
+
+	wqInterfaces "github.com/mevitae/redis-work-queue/autoscale/interfaces"
 )
 
 type deploymentList struct {
@@ -17,7 +19,7 @@ type WorkerCounts struct {
 	Spot int32
 }
 
-func (workers *Workers) GetReady() (counts WorkerCounts) {
+func (workers *Workers) GetReady(context context.Context) (counts WorkerCounts, err error) {
 	counts.Base = workers.GetReadyCount("base")
 	counts.Fast = workers.GetReadyCount("fast")
 	counts.Spot = workers.GetReadyCount("spot")
@@ -164,11 +166,11 @@ type Workers struct {
 	MaxFast int32
 }
 
-func (workers *Workers) GetDeployment(wType string) interfaces.Deployment {
+func (workers *Workers) GetDeployment(wType string) (wqInterfaces.Deployment, error) {
 	return &WorkerDeployment{
 		Workers:    workers,
 		WorkerType: wType,
-	}
+	}, nil
 }
 
 type WorkerDeployment struct {
@@ -176,14 +178,15 @@ type WorkerDeployment struct {
 	WorkerType string
 }
 
-func (workersDeployment *WorkerDeployment) GetReady() int32 {
-	return workersDeployment.Workers.GetReadyCount(workersDeployment.WorkerType)
+func (workersDeployment *WorkerDeployment) GetReady(context context.Context) (int32, error) {
+	return workersDeployment.Workers.GetReadyCount(workersDeployment.WorkerType), nil
 }
-func (workersDeployment *WorkerDeployment) GetRequest() int32 {
-	return workersDeployment.Workers.GetRequest(workersDeployment.WorkerType)
+func (workersDeployment *WorkerDeployment) GetRequest(context context.Context) (int32, error) {
+	return workersDeployment.Workers.GetRequest(workersDeployment.WorkerType), nil
 }
-func (workersDeployment *WorkerDeployment) SetRequest(count int32) {
+func (workersDeployment *WorkerDeployment) SetRequest(context context.Context, count int32) error {
 	workersDeployment.Workers.SetCount(workersDeployment.WorkerType, count)
+	return nil
 }
 
 func NewWorkers(deployment *deploymentStruct, finishjob chan job, Config Worker, WorkersConfig map[string]WorkerConfig) Workers {
