@@ -20,7 +20,7 @@ func main() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	startTime := time.Now()
-	autoscale, err := autoscale.InClusterAutoscaler(ctx, configPath, 0)
+	autoscale, err := autoscale.InClusterAutoscaler(ctx, configPath, 0, nil)
 	cancel()
 	if err != nil {
 		panic(err)

@@ -88,7 +88,12 @@ func LoadConfig(configPath string) (Config, error) {
 
 // InClusterAutoscaler creates an autoscaler for scaling deployments within the cluster the process
 // is running within.
-func InClusterAutoscaler(ctx context.Context, configPath string, time int64) (*wqautoscale.AutoScale, error) {
+func InClusterAutoscaler(
+	ctx context.Context,
+	configPath string,
+	time int64,
+	scaleReporter interfaces.ScaleReporter,
+) (*wqautoscale.AutoScale, error) {
 	config, err := LoadConfig(configPath)
 	if err != nil {
 		return nil, err
@@ -106,5 +111,12 @@ func InClusterAutoscaler(ctx context.Context, configPath string, time int64) (*w
 		deploymentsInterface = interfaces.NewSegmentedDeployments(deploymentsInterface)
 	}
 
-	return wqautoscale.NewAutoScale(ctx, workQueues, deploymentsInterface, config.Autoscale, time)
+	return wqautoscale.NewAutoScale(
+		ctx,
+		workQueues,
+		deploymentsInterface,
+		config.Autoscale,
+		time,
+		scaleReporter,
+	)
 }

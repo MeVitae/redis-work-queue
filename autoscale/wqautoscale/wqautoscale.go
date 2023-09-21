@@ -27,6 +27,8 @@ type AutoScale struct {
 	order []string
 	// jobs is a map from job name to Job value.
 	jobs map[string]*job
+	// scaleReporter is an optional ScaleReporter which is used for reporting stats.
+	scaleReporter interfaces.ScaleReporter
 }
 
 func NewAutoScale(
@@ -35,6 +37,7 @@ func NewAutoScale(
 	deployments interfaces.Deployments,
 	config Config,
 	time int64,
+	scaleReporter interfaces.ScaleReporter,
 ) (*AutoScale, error) {
 	jobs := make(map[string]*job, len(config.Jobs))
 	for name, jobConfig := range config.Jobs {
@@ -47,8 +50,9 @@ func NewAutoScale(
 	order, err := config.GetScaleOrder()
 	fmt.Println("Job scaling order is:", order)
 	return &AutoScale{
-		order: order,
-		jobs:  jobs,
+		order:         order,
+		jobs:          jobs,
+		scaleReporter: scaleReporter,
 	}, err
 }
 
@@ -71,7 +75,7 @@ func (autoscaler *AutoScale) Scale(ctx context.Context, time int64) error {
 
 		// Then scale this job
 		job := autoscaler.jobs[jobName]
-		jobRate, err := job.Scale(ctx, time, incomingRate)
+		jobRate, err := job.Scale(ctx, time, incomingRate, autoscaler.scaleReporter)
 		if err != nil {
 			return fmt.Errorf("failed to scale job %s: %w", jobName, err)
 		}
@@ -110,7 +114,12 @@ type job struct {
 }
 
 // Scale the workers for a job and return the expected rate of job completions.
-func (job *job) Scale(ctx context.Context, time int64, incomingRate float32) (float32, error) {
+func (job *job) Scale(
+	ctx context.Context,
+	time int64,
+	incomingRate float32,
+	reporter interfaces.ScaleReporter,
+) (float32, error) {
 	qlen, processing, err := job.Queue.Counts(ctx)
 	qlen += processing
 	fmt.Printf("Scaling %s. Queue length %d (including %d being processed)\n", job.QueueName, qlen, processing)
@@ -120,6 +129,7 @@ func (job *job) Scale(ctx context.Context, time int64, incomingRate float32) (fl
 	// Scale each tier one at a time:
 	totalReadyWorkers := int32(0)
 	totalRequestedWorkers := int32(0)
+	scaleReportTiers := make([]interfaces.ScaleReportTier, 0, len(job.DeploymentTiers))
 	for tierIdx, tier := range job.DeploymentTiers {
 		readyWorkers, requestedWorkers, err := tier.Scale(
 			ctx, time,
@@ -131,6 +141,23 @@ func (job *job) Scale(ctx context.Context, time int64, incomingRate float32) (fl
 		}
 		totalReadyWorkers += readyWorkers
 		totalRequestedWorkers += requestedWorkers
+		scaleReportTiers = append(scaleReportTiers, interfaces.ScaleReportTier{
+			DeploymentName: tier.DeploymentName,
+			Requested:      requestedWorkers,
+			Ready:          readyWorkers,
+		})
+	}
+	// Report the result
+	if reporter != nil {
+		reporter.ReportScale(interfaces.ScaleReport{
+			Job:                   job.QueueName,
+			Time:                  time,
+			QLen:                  qlen - processing,
+			Processing:            processing,
+			TotalReadyWorkers:     totalReadyWorkers,
+			TotalRequestedWorkers: totalRequestedWorkers,
+			Tiers:                 scaleReportTiers,
+		})
 	}
 	// Return the expected completion rate
 	return (float32(totalReadyWorkers) + float32(totalRequestedWorkers)) / (2 * float32(job.RunTime)), nil
