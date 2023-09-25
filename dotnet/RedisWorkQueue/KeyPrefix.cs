@@ -36,9 +36,9 @@ namespace RedisWorkQueue
         /// <param name="prefix">An instance of the KeyPrefix class representing the prefix to concatenate.</param>
         /// <param name="name">Name to concatenate with the prefix.</param>
         /// <returns>A new KeyPrefix instance with the concatenated namespaced prefix.</returns>
-        public static KeyPrefix Concat(KeyPrefix prefix, string name)
+        public KeyPrefix Concat(string name)
         {
-            return new KeyPrefix(prefix.Of(name));
+            return new KeyPrefix(this.Of(name));
         }
     }
 }

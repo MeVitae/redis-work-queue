@@ -4,7 +4,7 @@
     <TargetFrameworks>net6.0;net7.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <PackageId>MeVitae.RedisWorkQueue</PackageId>
-    <Version>0.1.6</Version>
+    <Version>0.2.0</Version>
     <Authors>Jacob O'Toole, Nathan Lamplough, Ilie Mihai Alexandru</Authors>
     <Company>MeVitae</Company>
     <RepositoryUrl>https://github.com/MeVitae/redis-work-queue</RepositoryUrl>
