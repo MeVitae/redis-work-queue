@@ -38,7 +38,7 @@ class WorkQueue(object):
         self.add_item_to_pipeline(pipeline, item)
         pipeline.execute()
     
-    def add_item_atomically(self, db: Redis, item: Item) -> None:
+    def add_new_item(self, db: Redis, item: Item) -> None:
         """Add an item to the work queue in an atomic way.
         This function allows the adding of item to queue atomically. Using Watch it keeps trying to execute
         addItem untill there is no change within the queues, verifications have been done and the addItem has been fully executed.

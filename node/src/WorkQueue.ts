@@ -62,7 +62,7 @@ export class WorkQueue {
    * @param item The item that will be executed using the method addItemToPipeline.
    * @returns {boolean} returns false if already in queue or true if the transaction succesfully happen.
    */
-  async addAtomicItem(db: Redis, item: Item): Promise<boolean> {
+  async addNewItem(db: Redis, item: Item): Promise<boolean> {
       for (;;) {
         try {
           await db.watch(this.mainQueueKey, this.processingKey);

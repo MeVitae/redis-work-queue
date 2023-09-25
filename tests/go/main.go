@@ -76,7 +76,7 @@ func main() {
 		}()
 
 		// Process item.ID
-		result1 := workQueue.AddItemAtomically(ctx, db, item1)
+		result1 := workQueue.AddNewItem(ctx, db, item1)
 		waitTime := 100 * time.Millisecond
 		fmt.Printf("Waiting for %v before proceeding to the next operation\n", waitTime)
 		time.Sleep(waitTime)
@@ -92,7 +92,7 @@ func main() {
 		}()
 
 		// Process item2.ID
-		result2 := workQueue.AddItemAtomically(ctx, db, item2)
+		result2 := workQueue.AddNewItem(ctx, db, item2)
 
 		if result1 == nil {
 			passed++

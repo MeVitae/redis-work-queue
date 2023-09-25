@@ -120,7 +120,7 @@ func (workQueue *WorkQueue) AddItem(ctx context.Context, db *redis.Client, item 
 	return err
 }
 
-// AddItemAtomically to the work Queue.
+// AddNewItem to the work Queue.
 //
 // This function allows the adding of item to queue atomically. Using Watch it keeps trying to execute
 // addItem untill there is no change within the queues, verifications have been done and the addItem has been fully executed.
@@ -128,7 +128,7 @@ func (workQueue *WorkQueue) AddItem(ctx context.Context, db *redis.Client, item 
 // This method should be used only when database is locked it could break other redis commands.
 //
 // Returns nil if successful  otherwise the error.
-func (workQueue *WorkQueue) AddItemAtomically(ctx context.Context, db *redis.Client, item Item) error {
+func (workQueue *WorkQueue) AddNewItem(ctx context.Context, db *redis.Client, item Item) error {
 	txf := func(tx *redis.Tx) error {
 
 		pipeNew := db.Pipeline()
