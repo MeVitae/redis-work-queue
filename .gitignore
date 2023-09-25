@@ -581,3 +581,7 @@ typescript/docs/
 .DS_Store
 ./.DS_Store
 **/.DS_Store
+
+.vscode/settings.json
+
+redis-work-queue.sln
