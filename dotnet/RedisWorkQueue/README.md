@@ -42,7 +42,7 @@ items to the queue, lease items from the queue, and mark completed items as done
   from the work queue. This should be called by a worker to get work to complete. The `db` parameter
   is the Redis instance, the `leaseSeconds` parameter is the number of seconds to lease the item for,
   the `block` parameter indicates whether to block and wait for an item to be available if the main
-  queue is empty, and the `timeout` parameter is the maximum time to block in milliseconds.
+  queue is empty, and the `timeout` parameter is the maximum time to block in seconds.
 
 - `Complete(IRedisClient db, Item item)`: Marks a job as completed and removes it from the work
   queue. The `db` parameter is the Redis instance and the `item` parameter is the item to be
@@ -64,7 +64,7 @@ workQueue.AddItem(redis, item);
 var queueLength = workQueue.QueueLength(redis);
 Console.WriteLine($"Queue Length: {queueLength}");
 
-var lease = workQueue.Lease(redis, 30, true, 10000);
+var lease = workQueue.Lease(redis, 30, true, 10);
 if (lease != null)
 {
     Console.WriteLine($"Leased Item: {lease.ID}");
@@ -86,5 +86,5 @@ we do the work and mark the item as completed using the `Complete` method.
 
 Note that in this example, we pass `true` for the `block` parameter of the `Lease` method, which
 means the method will block and wait for an item to be available if the main queue is empty. We also
-pass a `timeout` value of `10000` milliseconds, which means that if there are no items available
-after 10 seconds, the method will return `null`.
+pass a `timeout` value of `10` seconds, which means that if there are no items available after 10
+seconds, the method will return `null`.

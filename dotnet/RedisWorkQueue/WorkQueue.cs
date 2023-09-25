@@ -108,7 +108,7 @@ namespace RedisWorkQueue
         /// <param name="db">The Redis client instance.</param>
         /// <param name="leaseSeconds">The number of seconds to lease the item for.</param>
         /// <param name="block">Indicates whether to block and wait for an item to be available if the main queue is empty.</param>
-        /// <param name="timeout">The maximum time to block in milliseconds.</param>
+        /// <param name="timeout">The maximum time to block in seconds.</param>
         /// <returns>The leased item, or null if no item is available.</returns>
         public Item? Lease(IRedisClient db, int leaseSeconds, bool block, int timeout = 0)
         {
