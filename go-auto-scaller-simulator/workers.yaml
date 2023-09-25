@@ -1,8 +1,0 @@
-spot:
-  TimetilDieRange: [1300000, 2900000]
-  TimeTilStart: [1000,1300]
-  Price: 0.15
-fast:
-  TimetilDieRange: [-1, -1]
-  TimeTilStart: [1000,1300]
-  Price: 1.2
