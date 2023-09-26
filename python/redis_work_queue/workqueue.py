@@ -38,15 +38,14 @@ class WorkQueue(object):
         self.add_item_to_pipeline(pipeline, item)
         pipeline.execute()
     
-    def add_new_item(self, db: Redis, item: Item) -> None:
-        """Add an item to the work queue in an atomic way.
-        This function allows the adding of item to queue atomically. Using Watch it keeps trying to execute
-        addItem untill there is no change within the queues, verifications have been done and the addItem has been fully executed.
-        Therefore this wont allow duplifications of items within the queues
-        This method should be used only when database is locked it could break other redis commands.
+    def add_new_item(self, db: Redis, item: Item) -> bool:
+        """Adds an item to the work queue only if an item with the same ID doesn't already exist.
 
-        This returns False if item was already in queue otherwise True as Item was addeed to the queue.
-        """
+        This method uses WATCH to add the item atomically. The db client passed must not be used by
+        anything else while this method is running.
+
+        Returns a boolean indicating if the item was added or not. The item is only not added if it
+        already exists or if an error (other than a transaction error, which triggers a retry) occurs."""
         pipeline = db.pipeline(transaction=True)
         while True:
             try:
@@ -80,15 +79,15 @@ class WorkQueue(object):
         return db.llen(self._processing_key)
 
 
-    def get_queue_lengths(self, db):
-        """Returns the lengths of the lists atomically.
-        This can be used to get the real number of items within the main and processing queue.
-        """
+    def counts(self, db: Redis) -> tuple[int, int]:
+        """Returns the queue length, and number of items currently being processed, atomically.
+
+        The return value is `(qlen, processing)`."""
         pipeline = db.pipeline(transaction=True)
         pipeline.llen(self._main_queue_key)
         pipeline.llen(self._processing_key)
-        return pipeline.execute()
-
+        results = pipeline.execute()
+        return results[0], results[1]
 
 
     def light_clean(self, db: Redis) -> None:

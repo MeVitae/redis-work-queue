@@ -120,58 +120,59 @@ func (workQueue *WorkQueue) AddItem(ctx context.Context, db *redis.Client, item 
 	return err
 }
 
-// AddNewItem to the work Queue.
+// AddNewItem adds an item to the work queue only if an item with the same ID doesn't already exist.
 //
-// This function allows the adding of item to queue atomically. Using Watch it keeps trying to execute
-// addItem untill there is no change within the queues, verifications have been done and the addItem has been fully executed.
-// Therefore this wont allow duplifications of items within the queues
-// This method should be used only when database is locked it could break other redis commands.
+// This method uses WATCH to add the item atomically. The db client passed must not be used by
+// anything else while this method is running.
 //
-// Returns nil if successful  otherwise the error.
-func (workQueue *WorkQueue) AddNewItem(ctx context.Context, db *redis.Client, item Item) error {
+// Returns a boolean indicating if the item was added or not. The item is only not added if it
+// already exists or if an error (other than a transaction error, which triggers a retry) occurs.
+func (workQueue *WorkQueue) AddNewItem(ctx context.Context, db *redis.Client, item Item) (bool, error) {
+	added := false
+
 	txf := func(tx *redis.Tx) error {
-
+		// Try to find the current item in the queues:
 		pipeNew := db.Pipeline()
-
 		processingItemsInQueueCmd := pipeNew.LPos(ctx, workQueue.processingKey, item.ID, redis.LPosArgs{
 			Rank:   0,
 			MaxLen: 0,
 		})
-
 		workingItemsInQueueCmd := pipeNew.LPos(ctx, workQueue.mainQueueKey, item.ID, redis.LPosArgs{
 			Rank:   0,
 			MaxLen: 0,
 		})
-
 		_, err := pipeNew.Exec(ctx)
-
+		if err != nil {
+			return err
+		}
 		_, ProcessingQueueCheck := processingItemsInQueueCmd.Result()
 		_, WorkingQueueCheck := workingItemsInQueueCmd.Result()
-		if ProcessingQueueCheck == redis.Nil && WorkingQueueCheck == redis.Nil {
 
+		if ProcessingQueueCheck == redis.Nil && WorkingQueueCheck == redis.Nil {
+			// If the item wasn't in either queue, try to add it.
+			added = true
 			pipeEx := tx.Pipeline()
 			workQueue.AddItemToPipeline(ctx, pipeEx, item)
 			_, err = pipeEx.Exec(ctx)
-			if err != nil {
-				return err
-			}
+			return err
+		} else {
+			// Otherwise, it's in a queue, so we don't need to add it!
+			added = false
+			return nil
 		}
-		return nil
 	}
 
 	for {
 		err := db.Watch(ctx, txf, workQueue.mainQueueKey, workQueue.processingKey)
 		// Retry on transaction failure, return on anything else.
 		if err != redis.TxFailedErr {
-			return err
+			return added, err
 		}
 	}
 }
 
-// Lengths gets you the lengths of the lists atomically.
-//
-// This can be used to get the real number of items within the main and processing queue
-func (workQueue *WorkQueue) Lengths(ctx context.Context, db *redis.Client) (queueLen, processingLen int64, err error) {
+// Counts returns the queue length, and number of items currently being processed, atomically.
+func (workQueue *WorkQueue) Counts(ctx context.Context, db *redis.Client) (queueLen, processingLen int64, err error) {
 	tx := db.TxPipeline()
 
 	queueLenPipe := tx.LLen(ctx, workQueue.mainQueueKey)
@@ -184,11 +185,12 @@ func (workQueue *WorkQueue) Lengths(ctx context.Context, db *redis.Client) (queu
 	if err == nil {
 		processingLen, err = processingLenPipe.Result()
 	}
+
 	return
 }
 
 // Return the length of the work queue (not including items being processed, see
-// [WorkQueue.Processing]).
+// [WorkQueue.Processing] or [WorkQueue.Counts] to get both).
 func (workQueue *WorkQueue) QueueLen(ctx context.Context, db *redis.Client) (int64, error) {
 	return db.LLen(ctx, workQueue.mainQueueKey).Result()
 }
