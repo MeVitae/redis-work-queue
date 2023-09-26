@@ -122,7 +122,7 @@
 use std::future::Future;
 use std::time::Duration;
 
-use redis::{AsyncCommands, RedisResult};
+use redis::{AsyncCommands, RedisError, RedisResult};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -303,18 +303,20 @@ impl WorkQueue {
         db.llen(&self.processing_key)
     }
 
-    pub async fn get_queue_lengths<'a, C: AsyncCommands>(
+    pub fn get_queue_lengths<'a, C: AsyncCommands>(
         &'a self,
-        db: &mut C,
-    ) -> RedisResult<(u32,u32)> {
-        let (queue_length, processing_length): (u32, u32) = redis::pipe()
-            .atomic()
-            .llen(&self.main_queue_key)
-            .llen(&self.processing_key)
-            .query_async(db)
-            .await?;
+        db: &'a mut C,
+    ) -> Box<dyn std::future::Future<Output = Result<(u32, u32), RedisError>> + 'a> {
+        Box::new(async move {
+            let result = redis::pipe()
+                .atomic()
+                .llen(&self.main_queue_key)
+                .llen(&self.processing_key)
+                .query_async(db)
+                .await?;
 
-        Ok((queue_length, processing_length))
+            Ok(result)
+        })
     }
 
     /// Request a work lease the work queue. This should be called by a worker to get work to

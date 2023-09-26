@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 
 
 use redis_work_queue::{Item, KeyPrefix, WorkQueue};
-use rand::Rng;
 
 #[derive(Serialize, Deserialize)]
 struct SharedJobData {
