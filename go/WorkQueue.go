@@ -273,12 +273,3 @@ func (workQueue *WorkQueue) Complete(ctx context.Context, db *redis.Client, item
 	})
 	return true, err
 }
-
-func sliceContainsString(slice []string, target string) bool {
-	for _, s := range slice {
-		if s == target {
-			return true
-		}
-	}
-	return false
-}

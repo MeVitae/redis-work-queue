@@ -8,10 +8,6 @@ import {v4 as uuidv4} from 'uuid';
 import {Item} from './Item';
 import {KeyPrefix} from './KeyPrefix';
 
-function delay(ms: number) {
-  return new Promise( resolve => setTimeout(resolve, ms) );
-}
-
 export {KeyPrefix, Item};
 
 /**

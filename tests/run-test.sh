@@ -106,4 +106,4 @@ if [[ "$tests" == *"node"* ]]; then
 fi
 
 echo "Running spawner..."
-
+python3 job-spawner-and-cleaner.py "$host" "$tests"
