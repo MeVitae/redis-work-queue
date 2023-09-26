@@ -277,6 +277,9 @@ impl WorkQueue {
         pipeline.lpush(&self.main_queue_key, &item.id);
     }
 
+    /// Add an item to the work queue.
+    ///
+    /// This creates a pipeline and executes it on the database.
     pub async fn add_item<C: AsyncCommands>(&self, db: &mut C, item: &Item) -> RedisResult<()> {
         let mut pipeline = Box::new(redis::pipe());
         self.add_item_to_pipeline(&mut pipeline, item);
@@ -303,15 +306,15 @@ impl WorkQueue {
     pub async fn get_queue_lengths<'a, C: AsyncCommands>(
         &'a self,
         db: &mut C,
-    ) -> RedisResult<Vec<i64>> {
-        let (queue_length, processing_length): (i64, i64) = redis::pipe()
+    ) -> RedisResult<(u32,u32)> {
+        let (queue_length, processing_length): (u32, u32) = redis::pipe()
             .atomic()
             .llen(&self.main_queue_key)
             .llen(&self.processing_key)
             .query_async(db)
             .await?;
 
-        Ok(vec![queue_length, processing_length])
+        Ok((queue_length, processing_length))
     }
 
     /// Request a work lease the work queue. This should be called by a worker to get work to

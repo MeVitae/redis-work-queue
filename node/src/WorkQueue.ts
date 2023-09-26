@@ -9,10 +9,6 @@ import {Item} from './Item';
 import {KeyPrefix} from './KeyPrefix';
 import { resolve } from 'path';
 
-function delay(ms: number) {
-  return new Promise( resolve => setTimeout(resolve, ms) );
-}
-
 export {KeyPrefix, Item};
 
 /**
