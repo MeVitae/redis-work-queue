@@ -3,12 +3,12 @@
  * @description A work queue backed by a redis database.
  */
 
-import Redis, {ChainableCommander} from 'ioredis';
-import {v4 as uuidv4} from 'uuid';
-import {Item} from './Item';
-import {KeyPrefix} from './KeyPrefix';
+import Redis, { ChainableCommander } from 'ioredis';
+import { v4 as uuidv4 } from 'uuid';
+import { Item } from './Item';
+import { KeyPrefix } from './KeyPrefix';
 
-export {KeyPrefix, Item};
+export { KeyPrefix, Item };
 
 /**
  * A work queue backed by a redis database.
@@ -76,30 +76,83 @@ export class WorkQueue {
    * @returns {boolean} returns false if already in queue or true if the item is successfully added.
    */
   async addNewItem(db: Redis, item: Item): Promise<boolean> {
-      for (;;) {
-        try {
-          await db.watch(this.mainQueueKey, this.processingKey);
-  
-          const pipeNew = db.pipeline();
-          pipeNew.lpos(this.processingKey, item.id);
-          pipeNew.lpos(this.mainQueueKey, item.id);
-          const pipeResult = await pipeNew.exec();
-          if (pipeResult && (pipeResult[0][1] !== null || pipeResult[1][1] !== null)) {
-            // If the item already exists in either mainQueue or processingKey, don't add it.
-            return false;
-          }
+    while (true) {
+      try {
+        await db.watch(this.mainQueueKey, this.processingKey);
 
-          const pipeEx = db.multi();
-          this.addItemToPipeline(pipeEx, item);
-          let results = await pipeEx.exec()
-          if (results && results[0][1] === "OK") {
-            return true;
-          }
-        } finally {
-          db.unwatch();
+        const isItemInProcessingKey = await db.lpos(this.processingKey, item.id);
+        const isItemInMainQueueKey = await db.lpos(this.mainQueueKey, item.id);
+        if (isItemInProcessingKey !== null || isItemInMainQueueKey !== null) {
+          console.log("Item already exists, not added", item.id);
+          await db.unwatch();
+          return false;
         }
+        const transaction = db.multi();
+        this.addItemToPipeline(transaction, item);
+        const results = await transaction.exec();
+
+        if (!results) {
+          console.log("Transaction failed, item not added", item.id);
+          await db.unwatch();
+        }
+        console.log("Item added successfully", item.id);
+        return true
+      } catch (e) {
+        console.log("Error", e);
+      } finally {
+        await db.unwatch();
       }
+    }
+    return false;
   }
+
+  /**
+   * This is a dummy function used for testing!
+   * 
+   * Adds an item to the work queue only if an item with the same ID doesn't already exist with a 50 ms sleep.
+   *
+   * This method uses WATCH to add the item atomically. The db client passed must not be used by
+   * anything else while this method is running.
+   *
+   * Returns a boolean indicating if the item was added or not. The item is only not added if it
+   * already exists or if an error (other than a transaction error, which triggers a retry) occurs.
+   *
+   * @param {Redis} db The Redis Connection, this must not be used by anything else while this method is running.
+   * @param item The item that will be added, only if an item doesn't already exist with the same ID.
+   * @returns {boolean} returns false if already in queue or true if the item is successfully added.
+   */
+  async addNewItemWithSeep(db: Redis, item: Item): Promise<boolean> {
+    while (true) {
+      try {
+        await db.watch(this.mainQueueKey, this.processingKey);
+
+        const isItemInProcessingKey = await db.lpos(this.processingKey, item.id);
+        const isItemInMainQueueKey = await db.lpos(this.mainQueueKey, item.id);
+        if (isItemInProcessingKey !== null || isItemInMainQueueKey !== null) {
+          console.log("Item already exists, not added", item.id);
+          await db.unwatch();
+          return false;
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));;
+        const transaction = db.multi();
+        this.addItemToPipeline(transaction, item);
+        const results = await transaction.exec();
+
+        if (!results) {
+          console.log("Transaction failed, item not added", item.id);
+          await db.unwatch();
+        }
+        console.log("Item added successfully", item.id);
+        return true
+      } catch (e) {
+        console.log("Error", e);
+      } finally {
+        await db.unwatch();
+      }
+    }
+    return false;
+  }
+
 
   /**
    * Return the length of the work queue (not including items being processed, see
@@ -189,7 +242,7 @@ export class WorkQueue {
     } else {
       maybeItemId = await db.rpoplpush(this.mainQueueKey, this.processingKey);
     }
-
+    console.log(`Leased ${maybeItemId}`)
     if (maybeItemId == null) {
       return null;
     }
@@ -265,7 +318,7 @@ export class WorkQueue {
     if (removed === 0) {
       return false;
     }
-
+    console.log(`Completed ${item.id}`);
     const pipeline = db.pipeline();
     pipeline.del(this.itemDataKey.of(item.id));
     pipeline.del(this.leaseKey.of(item.id));

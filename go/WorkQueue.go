@@ -66,6 +66,7 @@ package workqueue
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -128,47 +129,87 @@ func (workQueue *WorkQueue) AddItem(ctx context.Context, db *redis.Client, item 
 // Returns a boolean indicating if the item was added or not. The item is only not added if it
 // already exists or if an error (other than a transaction error, which triggers a retry) occurs.
 func (workQueue *WorkQueue) AddNewItem(ctx context.Context, db *redis.Client, item Item) (bool, error) {
-	added := false
-
 	txf := func(tx *redis.Tx) error {
-		// Try to find the current item in the queues:
-		pipeNew := db.Pipeline()
-		processingItemsInQueueCmd := pipeNew.LPos(ctx, workQueue.processingKey, item.ID, redis.LPosArgs{
+
+		processingItemsInQueueCmd := tx.LPos(ctx, workQueue.processingKey, item.ID, redis.LPosArgs{
 			Rank:   0,
 			MaxLen: 0,
 		})
-		workingItemsInQueueCmd := pipeNew.LPos(ctx, workQueue.mainQueueKey, item.ID, redis.LPosArgs{
+		workingItemsInQueueCmd := tx.LPos(ctx, workQueue.mainQueueKey, item.ID, redis.LPosArgs{
 			Rank:   0,
 			MaxLen: 0,
 		})
-		_, err := pipeNew.Exec(ctx)
-		if err != nil {
-			return err
-		}
+
 		_, ProcessingQueueCheck := processingItemsInQueueCmd.Result()
 		_, WorkingQueueCheck := workingItemsInQueueCmd.Result()
 
 		if ProcessingQueueCheck == redis.Nil && WorkingQueueCheck == redis.Nil {
-			// If the item wasn't in either queue, try to add it.
-			added = true
-			pipeEx := tx.Pipeline()
-			workQueue.AddItemToPipeline(ctx, pipeEx, item)
-			_, err = pipeEx.Exec(ctx)
+
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				workQueue.AddItemToPipeline(ctx, pipe, item)
+				_, err := pipe.Exec(ctx)
+				return err
+			})
 			return err
 		} else {
-			// Otherwise, it's in a queue, so we don't need to add it!
-			added = false
 			return nil
 		}
 	}
 
-	for {
-		err := db.Watch(ctx, txf, workQueue.mainQueueKey, workQueue.processingKey)
-		// Retry on transaction failure, return on anything else.
-		if err != redis.TxFailedErr {
-			return added, err
+	for i := 0; i < 100; i++ {
+		err := db.Watch(ctx, txf, workQueue.processingKey, workQueue.mainQueueKey)
+		if err == nil {
+			return true, nil
+		}
+		if err == redis.TxFailedErr {
+			continue
+		}
+		return false, err
+	}
+
+	return false, errors.New("increment reached maximum number of retries")
+}
+
+func (workQueue *WorkQueue) AddNewItemWithSleep(ctx context.Context, db *redis.Client, item Item) (bool, error) {
+	txf := func(tx *redis.Tx) error {
+
+		processingItemsInQueueCmd := tx.LPos(ctx, workQueue.processingKey, item.ID, redis.LPosArgs{
+			Rank:   0,
+			MaxLen: 0,
+		})
+		workingItemsInQueueCmd := tx.LPos(ctx, workQueue.mainQueueKey, item.ID, redis.LPosArgs{
+			Rank:   0,
+			MaxLen: 0,
+		})
+
+		_, ProcessingQueueCheck := processingItemsInQueueCmd.Result()
+		_, WorkingQueueCheck := workingItemsInQueueCmd.Result()
+
+		if ProcessingQueueCheck == redis.Nil && WorkingQueueCheck == redis.Nil {
+			time.Sleep(100 * time.Microsecond)
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				workQueue.AddItemToPipeline(ctx, pipe, item)
+				_, err := pipe.Exec(ctx)
+				return err
+			})
+			return err
+		} else {
+			return nil
 		}
 	}
+
+	for i := 0; i < 100; i++ {
+		err := db.Watch(ctx, txf, workQueue.processingKey, workQueue.mainQueueKey)
+		if err == nil {
+			return true, nil
+		}
+		if err == redis.TxFailedErr {
+			continue
+		}
+		return false, err
+	}
+
+	return false, errors.New("increment reached maximum number of retries")
 }
 
 // Counts returns the queue length, and number of items currently being processed, atomically.

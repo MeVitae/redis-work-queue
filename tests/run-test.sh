@@ -44,12 +44,12 @@ done
 
 python3 job-spawner-and-cleaner.py "$host" "$tests" &
 
-mkdir -p /tmp/redis-work-queue-test-logs
+mkdir -p /tmp/redis-work-queue-test-logs &
 
 
 if [[ "$tests" == *"python"* ]]; then
     echo "Starting python workers..."
-    python3 python-tests.py "$host" > /tmp/redis-work-queue-test-logs/py3-worker-1.txt &
+    python3 python-tests.py "$host"> /tmp/redis-work-queue-test-logs/py3-worker-1.txt &
     sleep 1.45
     python3 python-tests.py "$host" > /tmp/redis-work-queue-test-logs/py3-worker-2.txt &
     sleep 0.9
@@ -98,7 +98,7 @@ if [[ "$tests" == *"node"* ]]; then
     echo "Installing Node.js dependencies"
     npm ci
     echo "Running Node.js workers..."
-    npm run test "$host" > /tmp/redis-work-queue-test-logs/node-worker-1.txt &
+    npm run test "$host"> /tmp/redis-work-queue-test-logs/node-worker-1.txt  &
     sleep 1.9
     npm run test "$host" > /tmp/redis-work-queue-test-logs/node-worker-2.txt &
     sleep 0.5
@@ -106,3 +106,5 @@ if [[ "$tests" == *"node"* ]]; then
 fi
 
 echo "Running tests..."
+
+wait

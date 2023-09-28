@@ -1,10 +1,9 @@
 import uuid
-from redis import Redis
+import redis
 from redis.client import Pipeline
-
 from redis_work_queue import Item
 from redis_work_queue import KeyPrefix
-
+Redis = redis.Redis
 
 class WorkQueue(object):
     """A work queue backed by a redis database"""
@@ -46,29 +45,32 @@ class WorkQueue(object):
 
         Returns a boolean indicating if the item was added or not. The item is only not added if it
         already exists or if an error (other than a transaction error, which triggers a retry) occurs."""
-        pipeline = db.pipeline(transaction=True)
+
         while True:
             try:
+                pipeline = db.pipeline(transaction=True)
                 pipeline.watch(self._main_queue_key, self._processing_key)
 
-                pipeline_LPOS = db.pipeline()
-
-                pipeline_LPOS.lpos(self._main_queue_key, item.id())
-                pipeline_LPOS.lpos(self._processing_key, item.id())
-
-                LPos_pipeline = pipeline_LPOS.execute()
-                if LPos_pipeline[0] is not None or LPos_pipeline[1] is not None:
-                    return False  
+                if (
+                    pipeline.lpos(self._main_queue_key, item.id()) is not None
+                    or pipeline.lpos(self._processing_key, item.id()) is not None
+                ):
+                    pipeline.unwatch()
+                    return False
 
                 pipeline.multi()
-                self.add_item_to_pipeline(pipeline, item)
-                pipeline.execute()
-                break
-            except Redis.WatchError:
-                continue
 
-        pipeline.unwatch()
-        return True
+                self.add_item_to_pipeline(pipeline, item)
+
+                pipeline.execute()
+                return True
+
+            except redis.WatchError:
+                continue
+            except Exception as e:
+                print("Error:", e)
+                raise
+
 
     def queue_len(self, db: Redis) -> int:
         """Return the length of the work queue (not including items being processed, see
