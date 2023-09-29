@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -43,7 +44,6 @@ func main() {
 
 	goQueue := workqueue.NewWorkQueue(workqueue.KeyPrefix("go_jobs"))
 	sharedQueue := workqueue.NewWorkQueue(workqueue.KeyPrefix("shared_jobs"))
-
 	goJobCounter := 0
 	sharedJobCounter := 0
 
@@ -172,7 +172,7 @@ func main() {
 						for i := 0; i < 3; i++ {
 							go func() {
 								for i := 0; i < 10; i++ {
-									_, err = sharedQueue.AddNewItemWithSleep(ctx, db, item)
+									_, err = AddNewItemWithSleep(ctx, db, item, &sharedQueue, workqueue.KeyPrefix("shared_jobs").Of(":processing"), workqueue.KeyPrefix("shared_jobs").Of(":queue"))
 									if err != nil {
 										fmt.Println(err)
 									}
@@ -202,7 +202,7 @@ func main() {
 						for i := 0; i < 3; i++ {
 							go func() {
 								for i := 0; i < 10; i++ {
-									_, err = sharedQueue.AddNewItemWithSleep(ctx, db, item2)
+									_, err = AddNewItemWithSleep(ctx, db, item2, &sharedQueue, workqueue.KeyPrefix("shared_jobs").Of(":processing"), workqueue.KeyPrefix("shared_jobs").Of(":queue"))
 									if err != nil {
 										fmt.Println(err)
 									}
@@ -219,4 +219,46 @@ func main() {
 			}
 		}
 	}
+}
+
+func AddNewItemWithSleep(ctx context.Context, db *redis.Client, item workqueue.Item, workQueue *workqueue.WorkQueue, mainKey, processingKey string) (bool, error) {
+	txf := func(tx *redis.Tx) error {
+
+		processingItemsInQueueCmd := tx.LPos(ctx, processingKey, item.ID, redis.LPosArgs{
+			Rank:   0,
+			MaxLen: 0,
+		})
+		workingItemsInQueueCmd := tx.LPos(ctx, mainKey, item.ID, redis.LPosArgs{
+			Rank:   0,
+			MaxLen: 0,
+		})
+
+		_, ProcessingQueueCheck := processingItemsInQueueCmd.Result()
+		_, WorkingQueueCheck := workingItemsInQueueCmd.Result()
+
+		if ProcessingQueueCheck == redis.Nil && WorkingQueueCheck == redis.Nil {
+			time.Sleep(100 * time.Millisecond)
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				workQueue.AddItemToPipeline(ctx, pipe, item)
+				_, err := pipe.Exec(ctx)
+				return err
+			})
+			return err
+		} else {
+			return nil
+		}
+	}
+
+	for i := 0; i < 100; i++ {
+		err := db.Watch(ctx, txf, processingKey, mainKey)
+		if err == nil {
+			return true, nil
+		}
+		if err == redis.TxFailedErr {
+			continue
+		}
+		return false, err
+	}
+
+	return false, errors.New("increment reached maximum number of retries")
 }

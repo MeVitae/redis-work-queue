@@ -11,7 +11,6 @@ const nodeQueueKeyPrefix: KeyPrefix = new KeyPrefix('node_jobs');
 const sharedQueueKeyPrefix: KeyPrefix = new KeyPrefix('shared_jobs');
 const nodeQueue: WorkQueue = new WorkQueue(nodeQueueKeyPrefix);
 const sharedQueue: WorkQueue = new WorkQueue(sharedQueueKeyPrefix);
-
 let nodeJobCounter: number = 0;
 let sharedJobCounter: number = 0;
 let shared: boolean = true;
@@ -19,6 +18,38 @@ let redisConnections: Redis[] = [];
 
 for (let i = 0; i < 5; i++) {
   redisConnections.push(new Redis(redisHost));
+}
+
+async function addNewItemWithSeep(db: Redis, item: Item, workQueue: WorkQueue, processingKey: string, mainKey: string): Promise<boolean> {
+  while (true) {
+    try {
+      await db.watch(mainKey, processingKey);
+
+      const isItemInProcessingKey = await db.lpos(processingKey, item.id);
+      const isItemInMainQueueKey = await db.lpos(mainKey, item.id);
+      if (isItemInProcessingKey !== null || isItemInMainQueueKey !== null) {
+        console.log("Item already exists, not added", item.id);
+        await db.unwatch();
+        return false;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));;
+      const transaction = db.multi();
+      workQueue.addItemToPipeline(transaction, item);
+      const results = await transaction.exec();
+
+      if (!results) {
+        console.log("Transaction failed, item not added", item.id);
+        await db.unwatch();
+      }
+      console.log("Item added successfully", item.id);
+      return true
+    } catch (e) {
+      console.log("Error", e);
+    } finally {
+      await db.unwatch();
+    }
+  }
+  return false;
 }
 
 async function main() {
@@ -50,9 +81,9 @@ async function main() {
       // Pretend it takes us a while to compute the result
       // Sometimes this will take too long and we'll timeout
       if (sharedJobCounter % 12 === 0) {
-         await new Promise<void>((resolve) => setTimeout(resolve, (sharedJobCounter % 4)*1000))
+        await new Promise<void>((resolve) => setTimeout(resolve, (sharedJobCounter % 4) * 1000))
       }
-      
+
       // Store result
       await db.set(sharedResultsKey.of(job.id), resultJson);
 
@@ -78,7 +109,7 @@ async function main() {
       * Sometimes this will take too long and we'll timeout
       */
       if (nodeJobCounter % 25 === 0) {
-        await new Promise<void>((resolve) => setTimeout(resolve, (nodeJobCounter % 20)*1000));
+        await new Promise<void>((resolve) => setTimeout(resolve, (nodeJobCounter % 20) * 1000));
       }
 
       // Store result
@@ -99,10 +130,7 @@ async function main() {
                 item
               ));
             } else {
-              promisees.push(sharedQueue.addNewItemWithSeep(
-                redis,
-                item
-              ));
+              promisees.push(addNewItemWithSeep(redis, item, sharedQueue, sharedResultsKey.of('":processing"'), sharedResultsKey.of(":queue")));
             }
           }
           await Promise.all(promisees);
@@ -119,10 +147,7 @@ async function main() {
                 item2,
               ));
             } else {
-              promisees.push(sharedQueue.addNewItemWithSeep(
-                redis,
-                item2,
-              ));
+              promisees.push(addNewItemWithSeep(redis, item2, sharedQueue, sharedResultsKey.of(":processing"), sharedResultsKey.of(":queue")));
             }
           }
           await Promise.all(promisees);

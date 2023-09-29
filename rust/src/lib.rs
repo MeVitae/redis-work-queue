@@ -306,17 +306,15 @@ impl WorkQueue {
     pub fn get_queue_lengths<'a, C: AsyncCommands>(
         &'a self,
         db: &'a mut C,
-    ) -> Box<dyn std::future::Future<Output = Result<(u32, u32), RedisError>> + 'a> {
-        Box::new(async move {
-            let result = redis::pipe()
+    ) -> impl Future<Output = RedisResult<(usize, usize)>> + 'a {
+        async {
+            redis::pipe()
                 .atomic()
                 .llen(&self.main_queue_key)
                 .llen(&self.processing_key)
                 .query_async(db)
-                .await?;
-
-            Ok(result)
-        })
+                .await
+        }
     }
 
     /// Request a work lease the work queue. This should be called by a worker to get work to

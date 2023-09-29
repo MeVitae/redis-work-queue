@@ -67,9 +67,6 @@ class WorkQueue(object):
 
             except redis.WatchError:
                 continue
-            except Exception as e:
-                print("Error:", e)
-                raise
 
 
     def queue_len(self, db: Redis) -> int:

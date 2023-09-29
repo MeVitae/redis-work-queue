@@ -170,48 +170,6 @@ func (workQueue *WorkQueue) AddNewItem(ctx context.Context, db *redis.Client, it
 	return false, errors.New("increment reached maximum number of retries")
 }
 
-func (workQueue *WorkQueue) AddNewItemWithSleep(ctx context.Context, db *redis.Client, item Item) (bool, error) {
-	txf := func(tx *redis.Tx) error {
-
-		processingItemsInQueueCmd := tx.LPos(ctx, workQueue.processingKey, item.ID, redis.LPosArgs{
-			Rank:   0,
-			MaxLen: 0,
-		})
-		workingItemsInQueueCmd := tx.LPos(ctx, workQueue.mainQueueKey, item.ID, redis.LPosArgs{
-			Rank:   0,
-			MaxLen: 0,
-		})
-
-		_, ProcessingQueueCheck := processingItemsInQueueCmd.Result()
-		_, WorkingQueueCheck := workingItemsInQueueCmd.Result()
-
-		if ProcessingQueueCheck == redis.Nil && WorkingQueueCheck == redis.Nil {
-			time.Sleep(100 * time.Microsecond)
-			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-				workQueue.AddItemToPipeline(ctx, pipe, item)
-				_, err := pipe.Exec(ctx)
-				return err
-			})
-			return err
-		} else {
-			return nil
-		}
-	}
-
-	for i := 0; i < 100; i++ {
-		err := db.Watch(ctx, txf, workQueue.processingKey, workQueue.mainQueueKey)
-		if err == nil {
-			return true, nil
-		}
-		if err == redis.TxFailedErr {
-			continue
-		}
-		return false, err
-	}
-
-	return false, errors.New("increment reached maximum number of retries")
-}
-
 // Counts returns the queue length, and number of items currently being processed, atomically.
 func (workQueue *WorkQueue) Counts(ctx context.Context, db *redis.Client) (queueLen, processingLen int64, err error) {
 	tx := db.TxPipeline()
