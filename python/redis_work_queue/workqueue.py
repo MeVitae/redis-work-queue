@@ -5,6 +5,7 @@ from redis_work_queue import Item
 from redis_work_queue import KeyPrefix
 Redis = redis.Redis
 
+
 class WorkQueue(object):
     """A work queue backed by a redis database"""
 
@@ -36,7 +37,7 @@ class WorkQueue(object):
         pipeline = db.pipeline()
         self.add_item_to_pipeline(pipeline, item)
         pipeline.execute()
-    
+
     def add_new_item(self, db: Redis, item: Item) -> bool:
         """Adds an item to the work queue only if an item with the same ID doesn't already exist.
 
@@ -45,7 +46,6 @@ class WorkQueue(object):
 
         Returns a boolean indicating if the item was added or not. The item is only not added if it
         already exists or if an error (other than a transaction error, which triggers a retry) occurs."""
-
         while True:
             try:
                 pipeline = db.pipeline(transaction=True)
@@ -59,15 +59,11 @@ class WorkQueue(object):
                     return False
 
                 pipeline.multi()
-
                 self.add_item_to_pipeline(pipeline, item)
-
                 pipeline.execute()
                 return True
-
             except redis.WatchError:
                 continue
-
 
     def queue_len(self, db: Redis) -> int:
         """Return the length of the work queue (not including items being processed, see
@@ -78,7 +74,6 @@ class WorkQueue(object):
         """Return the number of items being processed."""
         return db.llen(self._processing_key)
 
-
     def counts(self, db: Redis) -> tuple[int, int]:
         """Returns the queue length, and number of items currently being processed, atomically.
 
@@ -88,7 +83,6 @@ class WorkQueue(object):
         pipeline.llen(self._processing_key)
         results = pipeline.execute()
         return results[0], results[1]
-
 
     def light_clean(self, db: Redis) -> None:
         processing: list[bytes | str] = db.lrange(
