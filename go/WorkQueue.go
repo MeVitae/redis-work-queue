@@ -123,14 +123,16 @@ func (workQueue *WorkQueue) AddItem(ctx context.Context, db *redis.Client, item 
 
 // AddNewItem adds an item to the work queue only if an item with the same ID doesn't already exist.
 //
-// This method uses WATCH to add the item atomically. The db client passed must not be used by
-// anything else while this method is running.
+// This method uses WATCH to add the item atomically.
 //
 // Returns a boolean indicating if the item was added or not. The item is only not added if it
 // already exists or if an error (other than a transaction error, which triggers a retry) occurs.
-func (workQueue *WorkQueue) AddNewItem(ctx context.Context, db *redis.Client, item Item) (bool, error) {
+func (workQueue *WorkQueue) AddNewItem(
+	ctx context.Context,
+	db *redis.Client,
+	item Item,
+) (bool, error) {
 	txf := func(tx *redis.Tx) error {
-
 		processingItemsInQueueCmd := tx.LPos(ctx, workQueue.processingKey, item.ID, redis.LPosArgs{
 			Rank:   0,
 			MaxLen: 0,
@@ -144,11 +146,9 @@ func (workQueue *WorkQueue) AddNewItem(ctx context.Context, db *redis.Client, it
 		_, WorkingQueueCheck := workingItemsInQueueCmd.Result()
 
 		if ProcessingQueueCheck == redis.Nil && WorkingQueueCheck == redis.Nil {
-
 			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				workQueue.AddItemToPipeline(ctx, pipe, item)
-				_, err := pipe.Exec(ctx)
-				return err
+				return nil
 			})
 			return err
 		} else {
@@ -167,7 +167,7 @@ func (workQueue *WorkQueue) AddNewItem(ctx context.Context, db *redis.Client, it
 		return false, err
 	}
 
-	return false, errors.New("increment reached maximum number of retries")
+	return false, errors.New("AddNewItem reached maximum number of retries")
 }
 
 // Counts returns the queue length, and number of items currently being processed, atomically.
