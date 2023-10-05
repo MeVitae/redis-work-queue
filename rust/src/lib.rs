@@ -303,7 +303,10 @@ impl WorkQueue {
         db.llen(&self.processing_key)
     }
 
-    pub fn get_queue_lengths<'a, C: AsyncCommands>(
+    /// Returns the queue length, and number of items currently being processed, atomically.
+    ///
+    /// The output is `(queue_len, processing)`.
+    pub fn counts<'a, C: AsyncCommands>(
         &'a self,
         db: &'a mut C,
     ) -> impl Future<Output = RedisResult<(usize, usize)>> + 'a {
