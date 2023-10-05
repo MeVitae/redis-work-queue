@@ -168,7 +168,10 @@ func (workQueue *WorkQueue) AddNewItem(
 }
 
 // Counts returns the queue length, and number of items currently being processed, atomically.
-func (workQueue *WorkQueue) Counts(ctx context.Context, db *redis.Client) (queueLen, processingLen int64, err error) {
+func (workQueue *WorkQueue) Counts(
+    ctx context.Context,
+    db *redis.Client,
+) (queueLen, processingLen int64, err error) {
 	tx := db.TxPipeline()
 
 	queueLenPipe := tx.LLen(ctx, workQueue.mainQueueKey)
