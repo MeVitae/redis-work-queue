@@ -76,34 +76,29 @@ export class WorkQueue {
    * @returns {boolean} returns false if already in queue or true if the item is successfully added.
    */
   async addNewItem(db: Redis, item: Item): Promise<boolean> {
-    while (true) {
+    for (;;) {
       try {
         await db.watch(this.mainQueueKey, this.processingKey);
 
         const isItemInProcessingKey = await db.lpos(this.processingKey, item.id);
         const isItemInMainQueueKey = await db.lpos(this.mainQueueKey, item.id);
         if (isItemInProcessingKey !== null || isItemInMainQueueKey !== null) {
-          console.log("Item already exists, not added", item.id);
           await db.unwatch();
           return false;
         }
+
         const transaction = db.multi();
         this.addItemToPipeline(transaction, item);
         const results = await transaction.exec();
-
         if (!results) {
-          console.log("Transaction failed, item not added", item.id);
-          await db.unwatch();
+          continue;
         }
-        console.log("Item added successfully", item.id);
-        return true
-      } catch (e) {
-        console.log("Error", e);
-      } finally {
+        return true;
+      } catch (err) {
         await db.unwatch();
+        throw err;
       }
     }
-    return false;
   }
 
   /**
