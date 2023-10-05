@@ -66,7 +66,6 @@ package workqueue
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -156,7 +155,7 @@ func (workQueue *WorkQueue) AddNewItem(
 		}
 	}
 
-	for i := 0; i < 100; i++ {
+	for {
 		err := db.Watch(ctx, txf, workQueue.processingKey, workQueue.mainQueueKey)
 		if err == nil {
 			return true, nil
@@ -166,8 +165,6 @@ func (workQueue *WorkQueue) AddNewItem(
 		}
 		return false, err
 	}
-
-	return false, errors.New("AddNewItem reached maximum number of retries")
 }
 
 // Counts returns the queue length, and number of items currently being processed, atomically.
