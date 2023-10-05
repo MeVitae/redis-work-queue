@@ -4,8 +4,6 @@ use futures_lite::future;
 use redis::{AsyncCommands, RedisResult};
 use serde::{Deserialize, Serialize};
 
-
-
 use redis_work_queue::{Item, KeyPrefix, WorkQueue};
 
 #[derive(Serialize, Deserialize)]
@@ -25,9 +23,6 @@ struct SharedJobResult {
 fn main() -> RedisResult<()> {
     future::block_on(async_main())
 }
-
-
-
 
 async fn async_main() -> RedisResult<()> {
     let host = std::env::args()
@@ -54,17 +49,18 @@ async fn async_main() -> RedisResult<()> {
             shared_job_counter += 1;
 
             // First, try to get a job from the shared job queue
-			let timeout = if shared_job_counter%5 == 0 {
+            let timeout = if shared_job_counter % 5 == 0 {
                 Some(Duration::from_secs(1))
             } else {
                 Some(Duration::ZERO)
             };
             println!("Leasing from shared with timeout: {:?}", timeout);
-            let Some(job) = shared_queue.lease(
-                db,
-                timeout,
-                Duration::from_secs(2),
-            ).await? else { continue };
+            let Some(job) = shared_queue
+                .lease(db, timeout, Duration::from_secs(2))
+                .await?
+            else {
+                continue;
+            };
             // Also, if we get 'unlucky', crash while completing the job.
             if shared_job_counter % 7 == 0 {
                 println!("Dropping job");
@@ -102,17 +98,18 @@ async fn async_main() -> RedisResult<()> {
             rust_job_counter += 1;
 
             // First, try to get a job from the rust job queue
-			let timeout = if shared_job_counter%6 == 0 {
+            let timeout = if shared_job_counter % 6 == 0 {
                 Some(Duration::from_secs(2))
             } else {
                 Some(Duration::ZERO)
             };
             println!("Leasing from rust with timeout: {:?}", timeout);
-            let Some(job) = rust_queue.lease(
-                db,
-                timeout,
-                Duration::from_secs(1),
-            ).await? else { continue };
+            let Some(job) = rust_queue
+                .lease(db, timeout, Duration::from_secs(1))
+                .await?
+            else {
+                continue;
+            };
             // Also, if we get 'unlucky', crash while completing the job.
             if rust_job_counter % 7 == 0 {
                 println!("Dropping job");

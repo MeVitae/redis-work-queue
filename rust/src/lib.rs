@@ -122,7 +122,7 @@
 use std::future::Future;
 use std::time::Duration;
 
-use redis::{AsyncCommands, RedisError, RedisResult};
+use redis::{AsyncCommands, RedisResult};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
