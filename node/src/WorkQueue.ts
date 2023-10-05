@@ -265,7 +265,7 @@ export class WorkQueue {
     if (removed === 0) {
       return false;
     }
-    
+
     const pipeline = db.pipeline();
     pipeline.del(this.itemDataKey.of(item.id));
     pipeline.del(this.leaseKey.of(item.id));
