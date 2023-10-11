@@ -3,6 +3,7 @@ package wqautoscale
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 
 	"github.com/mevitae/redis-work-queue/autoscale/interfaces"
@@ -113,6 +114,20 @@ type job struct {
 	Children map[string]float32
 }
 
+// AverageTimes returns the average spinup and average target time of the deployments.
+func (job *job) AverageTimes() (spinup int32, target int32) {
+	spinupTotal := int64(0)
+	targetTotal := int64(0)
+	for idx := range job.DeploymentTiers {
+		tier := &job.DeploymentTiers[idx]
+		spinupTotal += int64(tier.SpinupTime)
+		targetTotal += int64(tier.TargetTime)
+	}
+	spinup = int32(spinupTotal / int64(len(job.DeploymentTiers)))
+	target = int32(targetTotal / int64(len(job.DeploymentTiers)))
+	return
+}
+
 // Scale the workers for a job and return the expected rate of job completions.
 func (job *job) Scale(
 	ctx context.Context,
@@ -122,7 +137,10 @@ func (job *job) Scale(
 ) (float32, error) {
 	qlen, processing, err := job.Queue.Counts(ctx)
 	qlen += processing
-	fmt.Printf("Scaling %s. Queue length %d (including %d being processed)\n", job.QueueName, qlen, processing)
+	fmt.Printf(
+		"Scaling %s. Queue length %d (including %d being processed). Incoming rate: %v jobs/min.\n",
+		job.QueueName, qlen, processing, math.Ceil(float64(incomingRate)*1000*60),
+	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get queue length: %w", err)
 	}
@@ -159,8 +177,23 @@ func (job *job) Scale(
 			Tiers:                 scaleReportTiers,
 		})
 	}
-	// Return the expected completion rate
-	return (float32(totalReadyWorkers) + float32(totalRequestedWorkers)) / (2 * float32(job.RunTime)), nil
+
+	// Calculate the outgoing job rate (at full capacity)
+	jobRate := (float32(totalReadyWorkers) + float32(totalRequestedWorkers)) / (2 * float32(job.RunTime))
+
+	// Calculate an upper bound on the input rate
+	maxRate := incomingRate
+	if qlen > 0 {
+		// If there are jobs in the queue, these should all be completed after spinup+target.
+		averageSpinup, averageTarget := job.AverageTimes()
+		maxRate += float32(qlen) / float32(averageSpinup+averageTarget)
+	}
+
+	// Make sure the job rate doesn't exeed the maximum
+	if jobRate > maxRate {
+		jobRate = maxRate
+	}
+	return jobRate, nil
 }
 
 // DeploymentTier is a tier of workers for a job.
@@ -257,8 +290,9 @@ func (tier *deploymentTier) Scale(
 		idealScale = afterSpinupIdealScale
 	}
 
-	// Ensure we always request at least one worker if there's an element in the queue
-	if qlen > 0 && idealScale <= 0 {
+	// Ensure we always request at least one worker if there's an element in the queue, or some
+	// incoming jobs
+	if (qlen > 0 || jobRate > 0) && idealScale <= 0 {
 		idealScale = 1
 	}
 	// Remove the base worker count
@@ -272,7 +306,11 @@ func (tier *deploymentTier) Scale(
 	}
 
 	// Calculate the actual number of workers to request
-	tier.SlowDown.Push(currentTime-tier.SlowdownDuration(jobRunTime, qlen), currentTime, idealScale)
+	tier.SlowDown.Push(
+		currentTime-tier.SlowdownDuration(jobRunTime, afterSpinupQlen),
+		currentTime,
+		idealScale,
+	)
 	scale := tier.SlowDown.GetScale()
 	if tier.SlowupDuration > 0 {
 		tier.SlowUp.Push(currentTime-tier.SlowupDuration, currentTime, scale)
