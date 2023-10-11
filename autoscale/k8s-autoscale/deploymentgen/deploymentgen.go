@@ -20,24 +20,38 @@ func ptr[T any](value T) *T {
 type Deployment struct {
 	// Namespace of the Kubernetes deployment
 	Namespace string
+
 	// Name of the Kubernetes deployment
 	Name string
+
 	// PodName is the name of the pods created by the deployment, and the value of the "app" label.
 	PodName string `yaml:"podName"`
+
 	// Image is the container image to use.
 	Image string
+
 	// DefaultScale is the default number of replicas.
 	DefaultScale int32 `yaml:"defaultScale"`
+
 	// RevisionHistoryLimit is the number of past deployment revisions kept around.
 	RevisionHistoryLimit int32 `yaml:"revisionHistoryLimit"`
+
 	// Resources is the resource requests and limits for the pods.
 	Resources *core.ResourceRequirementsApplyConfiguration
+
+	// Volumes to apply to the deployment.
+	Volumes []core.VolumeApplyConfiguration
+
+	// VolumeMounts for the generated containers.
+	VolumeMounts []core.VolumeMountApplyConfiguration `yaml:"volumeMounts"`
+
 	// Spot determines if the worker should only run on spot machines.
 	//
 	// This is currently only supported on GKE, though support for AKS is planned.
 	//
 	// Currently, it adds the "cloud.google.com/gke-spot" node selector toleration to the pods.
 	Spot bool
+
 	// AddSpot, if true, causes a new spot deployment to be automatically created.
 	//
 	// The new deployment will have "-spot" appended to its Name and PodName, it will have its
@@ -75,11 +89,13 @@ func (deployment *Deployment) Generate() *apps.DeploymentApplyConfiguration {
 				},
 				Spec: &core.PodSpecApplyConfiguration{
 					Containers: []core.ContainerApplyConfiguration{{
-						Name:      &deployment.PodName,
-						Image:     &deployment.Image,
-						Resources: deployment.Resources,
+						Name:         &deployment.PodName,
+						Image:        &deployment.Image,
+						Resources:    deployment.Resources,
+						VolumeMounts: deployment.VolumeMounts,
 					}},
 					RestartPolicy: ptr(corev1.RestartPolicyAlways),
+					Volumes:       deployment.Volumes,
 				},
 			},
 		},
