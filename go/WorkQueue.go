@@ -151,7 +151,7 @@ func (workQueue *WorkQueue) AddNewItem(
 			})
 			return err
 		} else {
-			return nil
+			return false
 		}
 	}
 

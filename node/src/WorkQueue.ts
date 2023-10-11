@@ -73,7 +73,7 @@ export class WorkQueue {
    *
    * @param {Redis} db The Redis Connection, this must not be used by anything else while this method is running.
    * @param item The item that will be added, only if an item doesn't already exist with the same ID.
-   * @returns {boolean} returns false if already in queue or true if the item is successfully added.
+   * @returns {boolean} returns true for success (item added to the queue), false if the item is in one of the queues.
    */
   async addNewItem(db: Redis, item: Item): Promise<boolean> {
     for (;;) {

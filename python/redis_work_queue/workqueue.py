@@ -1,9 +1,8 @@
 import uuid
-import redis
 from redis.client import Pipeline
 from redis_work_queue import Item
 from redis_work_queue import KeyPrefix
-Redis = redis.Redis
+from redis import Redis, WatchError
 
 
 class WorkQueue(object):
@@ -62,7 +61,7 @@ class WorkQueue(object):
                 self.add_item_to_pipeline(pipeline, item)
                 pipeline.execute()
                 return True
-            except redis.WatchError:
+            except WatchError:
                 continue
 
     def queue_len(self, db: Redis) -> int:
