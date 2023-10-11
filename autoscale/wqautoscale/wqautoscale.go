@@ -109,6 +109,9 @@ type job struct {
 	// RunTime is the average time taken for a job to complete on a single worker.
 	RunTime int32
 
+	// Timeout is the time for a job to timeout in the work queue.
+	Timeout int32
+
 	// Children is a map of other job names to the average number of jobs of that type spawned by
 	// one job of this type completing.
 	Children map[string]float32
@@ -148,11 +151,12 @@ func (job *job) Scale(
 	totalReadyWorkers := int32(0)
 	totalRequestedWorkers := int32(0)
 	scaleReportTiers := make([]interfaces.ScaleReportTier, 0, len(job.DeploymentTiers))
-	for tierIdx, tier := range job.DeploymentTiers {
+	for tierIdx := range job.DeploymentTiers {
+		tier := &job.DeploymentTiers[tierIdx]
 		readyWorkers, requestedWorkers, err := tier.Scale(
 			ctx, time,
 			totalReadyWorkers, totalRequestedWorkers,
-			job.RunTime, qlen, incomingRate,
+			job.RunTime, job.Timeout, qlen, incomingRate,
 		)
 		if err != nil {
 			return 0, fmt.Errorf("failed to scale tier %v: %w", tierIdx, err)
@@ -243,6 +247,7 @@ func (tier *deploymentTier) Scale(
 	currentBaseWorkers int32,
 	requestedBaseWorkers int32,
 	jobRunTime int32,
+	timeout int32,
 	qlen int32,
 	jobRate float32,
 ) (currentScale, requestedScale int32, err error) {
@@ -256,12 +261,12 @@ func (tier *deploymentTier) Scale(
 		err = fmt.Errorf("failed to get requested count: %w", err)
 		return
 	}
-	fmt.Println("Tier has", currentScale, "active workers of", requestedScale, "requested")
+	fmt.Print("Tier has ", currentScale, " active workers of ", requestedScale, " requested")
 
 	// If we have no choice over the number of workers, just set it.
 	if tier.MinScale == tier.MaxScale {
 		requestedScale = tier.MaxScale
-		fmt.Println("Scaling to", requestedScale, "(fixed scale)")
+		fmt.Println(", scaling to", requestedScale, "(fixed scale)")
 		err = tier.Deployment.SetRequest(ctx, requestedScale)
 		if err != nil {
 			err = fmt.Errorf("failed to set scale request: %w", err)
@@ -307,7 +312,7 @@ func (tier *deploymentTier) Scale(
 
 	// Calculate the actual number of workers to request
 	tier.SlowDown.Push(
-		currentTime-tier.SlowdownDuration(jobRunTime, afterSpinupQlen),
+		currentTime-tier.SlowdownDuration(jobRunTime, timeout, afterSpinupQlen),
 		currentTime,
 		idealScale,
 	)
@@ -322,7 +327,7 @@ func (tier *deploymentTier) Scale(
 	if tier.MaxScale < scale {
 		scale = tier.MaxScale
 	}
-	fmt.Println("Scaling to", scale)
+	fmt.Println(", scaling to", scale)
 	err = tier.Deployment.SetRequest(ctx, scale)
 	if err != nil {
 		err = fmt.Errorf("failed to set scale request: %w", err)
@@ -435,6 +440,8 @@ type JobConfig struct {
 	DeploymentTiers []DeploymentTierConfig `yaml:"deploymentTiers"`
 	// RunTime is the average time taken for a job to complete on a single worker.
 	RunTime int32 `yaml:"runTime"`
+	// Timeout is the time for a job to timeout in the work queue.
+	Timeout int32
 	// Children is a map of other job names to the average number of jobs of that type spawned by
 	// one job of this type.
 	Children map[string]float32
@@ -459,6 +466,7 @@ func (config *JobConfig) ToJob(
 		Queue:           workQueues.GetWorkQueue(config.QueueName),
 		DeploymentTiers: deploymentTiers,
 		RunTime:         config.RunTime,
+		Timeout:         config.Timeout,
 		Children:        config.Children,
 	}, nil
 }
@@ -536,17 +544,29 @@ type DeploymentTierConfig struct {
 // SlowdownDuration returns the duration of the window for SlowDown.
 //
 // If not manually specified, this will be longer than the spinup and target time combined.
-func (config *DeploymentTierConfig) SlowdownDuration(jobRunTime, qlen int32) int64 {
+func (config *DeploymentTierConfig) SlowdownDuration(jobRunTime, timeout, qlen int32) int64 {
 	duration := int64(config.ManualSlowdownDuration)
 	if duration == 0 {
+		// First, compute the default timeout if one isn't specified:
+		if timeout == 0 {
+			// Default to a timeout of 4 runtimes
+			timeout = jobRunTime * 4
+			// Or at least the target time
+			if timeout < config.TargetTime {
+				timeout = config.TargetTime
+			}
+		}
 		// TODO: Tweak this!
 		duration = int64(config.SpinupTime + config.SpinupTime/4 + config.TargetTime + config.TargetTime/4 + 1)
 		// If the time taken for a single worker to complete the work is less than the window
 		// duration, then we don't need to look any further back!
-		singleWorkerDuration := int64(jobRunTime) * int64(qlen)
+		// We also take into account the timeout time, since killing works will likely cause some
+		// jobs to timeout.
+		timeoutBuffer := int64(timeout + timeout/4)
+		singleWorkerDuration := int64(jobRunTime)*int64(qlen) + timeoutBuffer
 		// Except, to prevent scaling to 0, we don't go less than the jobRunTime
 		if singleWorkerDuration <= 0 {
-			singleWorkerDuration = int64(jobRunTime)
+			singleWorkerDuration = int64(jobRunTime) + timeoutBuffer
 		}
 		if singleWorkerDuration < duration {
 			return singleWorkerDuration
