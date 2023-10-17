@@ -183,7 +183,7 @@ func (job *job) Scale(
 	}
 
 	// Calculate the outgoing job rate (at full capacity)
-	jobRate := (float32(totalReadyWorkers) + float32(totalRequestedWorkers)) / (2 * float32(job.RunTime))
+	jobRate := (float32(3*totalReadyWorkers) + float32(totalRequestedWorkers)) / (float32(4 * job.RunTime))
 
 	// Calculate an upper bound on the input rate
 	maxRate := incomingRate
@@ -543,10 +543,17 @@ type DeploymentTierConfig struct {
 
 // SlowdownDuration returns the duration of the window for SlowDown.
 //
-// If not manually specified, this will be longer than the spinup and target time combined.
+// If not manually specified, this will be longer than the spinup and target time combined, unless
+// qlen is 0, then its shorter, but still at least the spinup time.
 func (config *DeploymentTierConfig) SlowdownDuration(jobRunTime, timeout, qlen int32) int64 {
 	duration := int64(config.ManualSlowdownDuration)
 	if duration == 0 {
+		// Special case when there's nothing in the queue
+		if qlen == 0 {
+			// Before scaling to 0, we give at least the spinup time, we don't want to scale to 0
+			// and then scale back up, costing the spinup time.
+			return int64(config.SpinupTime + config.SpinupTime/4 + 1)
+		}
 		// First, compute the default timeout if one isn't specified:
 		if timeout == 0 {
 			// Default to a timeout of 4 runtimes
@@ -565,6 +572,7 @@ func (config *DeploymentTierConfig) SlowdownDuration(jobRunTime, timeout, qlen i
 		timeoutBuffer := int64(timeout + timeout/4)
 		singleWorkerDuration := int64(jobRunTime)*int64(qlen) + timeoutBuffer
 		// Except, to prevent scaling to 0, we don't go less than the jobRunTime
+		// FIXME: This case shouldn't occur, but I'm leaving it here to be safe
 		if singleWorkerDuration <= 0 {
 			singleWorkerDuration = int64(jobRunTime) + timeoutBuffer
 		}
