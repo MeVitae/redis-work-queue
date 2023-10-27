@@ -131,6 +131,8 @@ func (workQueue *WorkQueue) AddNewItem(
 	db *redis.Client,
 	item Item,
 ) (bool, error) {
+	added := false
+
 	txf := func(tx *redis.Tx) error {
 		processingItemsInQueueCmd := tx.LPos(ctx, workQueue.processingKey, item.ID, redis.LPosArgs{
 			Rank:   0,
@@ -149,16 +151,18 @@ func (workQueue *WorkQueue) AddNewItem(
 				workQueue.AddItemToPipeline(ctx, pipe, item)
 				return nil
 			})
+			added = true
 			return err
 		} else {
-			return false
+			added = false
+			return nil
 		}
 	}
 
 	for {
 		err := db.Watch(ctx, txf, workQueue.processingKey, workQueue.mainQueueKey)
 		if err == nil {
-			return true, nil
+			return added, nil
 		}
 		if err == redis.TxFailedErr {
 			continue
@@ -169,8 +173,8 @@ func (workQueue *WorkQueue) AddNewItem(
 
 // Counts returns the queue length, and number of items currently being processed, atomically.
 func (workQueue *WorkQueue) Counts(
-    ctx context.Context,
-    db *redis.Client,
+	ctx context.Context,
+	db *redis.Client,
 ) (queueLen, processingLen int64, err error) {
 	tx := db.TxPipeline()
 
