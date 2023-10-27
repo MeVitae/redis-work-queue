@@ -3,12 +3,12 @@
  * @description A work queue backed by a redis database.
  */
 
-import Redis, {ChainableCommander} from 'ioredis';
-import {v4 as uuidv4} from 'uuid';
-import {Item} from './Item';
-import {KeyPrefix} from './KeyPrefix';
+import Redis, { ChainableCommander } from 'ioredis';
+import { v4 as uuidv4 } from 'uuid';
+import { Item } from './Item';
+import { KeyPrefix } from './KeyPrefix';
 
-export {KeyPrefix, Item};
+export { KeyPrefix, Item };
 
 /**
  * A work queue backed by a redis database.
@@ -35,10 +35,11 @@ export class WorkQueue {
 
   /**
    * Add an item to the work queue. This adds the redis commands onto the pipeline passed.
+   *
    * Use `WorkQueue.addItem` if you don't want to pass a pipeline directly.
-   * Add the item data.
-   * @param {Pipeline} pipeline The pipeline that the data will be executed.
-   * @param {Item} item The Item which will be set in the Redis with the key of this.itemDataKey.of(item.id).
+   *
+   * @param {Pipeline} pipeline The pipeline that the commands to add the item will be pushed to.
+   * @param {Item} item The Item to be added.
    */
   addItemToPipeline(pipeline: ChainableCommander, item: Item) {
     // NOTE: it's important that the data is added first, otherwise someone before the data is ready.
@@ -48,11 +49,12 @@ export class WorkQueue {
   }
 
   /**
-   * Add an item to the work queue.
+   * Add an item to the work queue. See `addNewItem` to avoid adding duplicate items.
+   *
    * This creates a pipeline and executes it on the database.
    *
    * @param {Redis} db The Redis Connection.
-   * @param item The item that will be executed using the method addItemToPipeline.
+   * @param item The item to be added.
    */
   async addItem(db: Redis, item: Item): Promise<void> {
     const pipeline = db.pipeline();
@@ -61,7 +63,47 @@ export class WorkQueue {
   }
 
   /**
-   * This is used to get the length of the Main Queue.
+   * Adds an item to the work queue only if an item with the same ID doesn't already exist.
+   *
+   * This method uses WATCH to add the item atomically. The db client passed must not be used by
+   * anything else while this method is running.
+   *
+   * Returns a boolean indicating if the item was added or not. The item is only not added if it
+   * already exists or if an error (other than a transaction error, which triggers a retry) occurs.
+   *
+   * @param {Redis} db The Redis Connection, this must not be used by anything else while this method is running.
+   * @param item The item that will be added, only if an item doesn't already exist with the same ID.
+   * @returns {boolean} returns true for success (item added to the queue), false if the item is in one of the queues.
+   */
+  async addNewItem(db: Redis, item: Item): Promise<boolean> {
+    for (;;) {
+      try {
+        await db.watch(this.mainQueueKey, this.processingKey);
+
+        const isItemInProcessingKey = await db.lpos(this.processingKey, item.id);
+        const isItemInMainQueueKey = await db.lpos(this.mainQueueKey, item.id);
+        if (isItemInProcessingKey !== null || isItemInMainQueueKey !== null) {
+          await db.unwatch();
+          return false;
+        }
+
+        const transaction = db.multi();
+        this.addItemToPipeline(transaction, item);
+        const results = await transaction.exec();
+        if (!results) {
+          continue;
+        }
+        return true;
+      } catch (err) {
+        await db.unwatch();
+        throw err;
+      }
+    }
+  }
+
+  /**
+   * Return the length of the work queue (not including items being processed, see
+   * `WorkQueue.processing` or `WorkQueue.counts` to get both).
    *
    * @param {Redis} db The Redis Connection.
    * @returns {Promise<number>} Return the length of the work queue (not including items being processed, see `WorkQueue.processing()`).
@@ -71,13 +113,29 @@ export class WorkQueue {
   }
 
   /**
-   * This is used to get the lenght of the Processing Queue.
+   * This is used to get the number of items currently being processed.
    *
    * @param {Redis} db The Redis Connection.
    * @returns {Promise<number>} The number of items being processed.
    */
   processing(db: Redis): Promise<number> {
     return db.llen(this.processingKey);
+  }
+
+  /**
+   * Returns the queue length, and number of items currently being processed, atomically.
+   * 
+   * @param {Redis} db The Redis Connection.
+   * @returns {Promise<[number, number]>} Return the length of main queue and processing queue, respectively.
+   */
+  async counts(db: Redis): Promise<[number, number]> {
+    const multi = db.multi();
+    multi.llen(this.mainQueueKey);
+    multi.llen(this.processingKey);
+    const result = (await multi.exec()) as Array<[Error | null, number]>;
+    const queueLength = result[0][1];
+    const processingLength = result[1][1];
+    return [queueLength, processingLength];
   }
 
   /**
@@ -116,8 +174,8 @@ export class WorkQueue {
   async lease(
     db: Redis,
     leaseSecs: number,
-    block = true,
-    timeout = 1
+    block: boolean = true,
+    timeout: number = 1
   ): Promise<Item | null> {
     let maybeItemId: string | null = null;
 

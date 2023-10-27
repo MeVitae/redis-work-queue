@@ -1,9 +1,8 @@
 import uuid
-from redis import Redis
 from redis.client import Pipeline
-
 from redis_work_queue import Item
 from redis_work_queue import KeyPrefix
+from redis import Redis, WatchError
 
 
 class WorkQueue(object):
@@ -38,6 +37,33 @@ class WorkQueue(object):
         self.add_item_to_pipeline(pipeline, item)
         pipeline.execute()
 
+    def add_new_item(self, db: Redis, item: Item) -> bool:
+        """Adds an item to the work queue only if an item with the same ID doesn't already exist.
+
+        This method uses WATCH to add the item atomically. The db client passed must not be used by
+        anything else while this method is running.
+
+        Returns a boolean indicating if the item was added or not. The item is only not added if it
+        already exists or if an error (other than a transaction error, which triggers a retry) occurs."""
+        while True:
+            try:
+                pipeline = db.pipeline(transaction=True)
+                pipeline.watch(self._main_queue_key, self._processing_key)
+
+                if (
+                    pipeline.lpos(self._main_queue_key, item.id()) is not None
+                    or pipeline.lpos(self._processing_key, item.id()) is not None
+                ):
+                    pipeline.unwatch()
+                    return False
+
+                pipeline.multi()
+                self.add_item_to_pipeline(pipeline, item)
+                pipeline.execute()
+                return True
+            except WatchError:
+                continue
+
     def queue_len(self, db: Redis) -> int:
         """Return the length of the work queue (not including items being processed, see
         `WorkQueue.processing`)."""
@@ -46,6 +72,16 @@ class WorkQueue(object):
     def processing(self, db: Redis) -> int:
         """Return the number of items being processed."""
         return db.llen(self._processing_key)
+
+    def counts(self, db: Redis) -> tuple[int, int]:
+        """Returns the queue length, and number of items currently being processed, atomically.
+
+        The return value is `(qlen, processing)`."""
+        pipeline = db.pipeline(transaction=True)
+        pipeline.llen(self._main_queue_key)
+        pipeline.llen(self._processing_key)
+        results = pipeline.execute()
+        return results[0], results[1]
 
     def light_clean(self, db: Redis) -> None:
         processing: list[bytes | str] = db.lrange(

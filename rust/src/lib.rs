@@ -304,6 +304,23 @@ impl WorkQueue {
         db.llen(&self.processing_key)
     }
 
+    /// Returns the queue length, and number of items currently being processed, atomically.
+    ///
+    /// The output is `(queue_len, processing)`.
+    pub fn counts<'a, C: AsyncCommands>(
+        &'a self,
+        db: &'a mut C,
+    ) -> impl Future<Output = RedisResult<(usize, usize)>> + 'a {
+        async {
+            redis::pipe()
+                .atomic()
+                .llen(&self.main_queue_key)
+                .llen(&self.processing_key)
+                .query_async(db)
+                .await
+        }
+    }
+
     /// Request a work lease the work queue. This should be called by a worker to get work to
     /// complete. When completed, the `complete` method should be called.
     ///

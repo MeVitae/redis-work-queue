@@ -120,8 +120,80 @@ func (workQueue *WorkQueue) AddItem(ctx context.Context, db *redis.Client, item 
 	return err
 }
 
+// AddNewItem adds an item to the work queue only if an item with the same ID doesn't already exist.
+//
+// This method uses WATCH to add the item atomically.
+//
+// Returns a boolean indicating if the item was added or not. The item is only not added if it
+// already exists or if an error (other than a transaction error, which triggers a retry) occurs.
+func (workQueue *WorkQueue) AddNewItem(
+	ctx context.Context,
+	db *redis.Client,
+	item Item,
+) (bool, error) {
+	added := false
+
+	txf := func(tx *redis.Tx) error {
+		processingItemsInQueueCmd := tx.LPos(ctx, workQueue.processingKey, item.ID, redis.LPosArgs{
+			Rank:   0,
+			MaxLen: 0,
+		})
+		workingItemsInQueueCmd := tx.LPos(ctx, workQueue.mainQueueKey, item.ID, redis.LPosArgs{
+			Rank:   0,
+			MaxLen: 0,
+		})
+
+		_, ProcessingQueueCheck := processingItemsInQueueCmd.Result()
+		_, WorkingQueueCheck := workingItemsInQueueCmd.Result()
+
+		if ProcessingQueueCheck == redis.Nil && WorkingQueueCheck == redis.Nil {
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				workQueue.AddItemToPipeline(ctx, pipe, item)
+				return nil
+			})
+			added = true
+			return err
+		} else {
+			added = false
+			return nil
+		}
+	}
+
+	for {
+		err := db.Watch(ctx, txf, workQueue.processingKey, workQueue.mainQueueKey)
+		if err == nil {
+			return added, nil
+		}
+		if err == redis.TxFailedErr {
+			continue
+		}
+		return false, err
+	}
+}
+
+// Counts returns the queue length, and number of items currently being processed, atomically.
+func (workQueue *WorkQueue) Counts(
+	ctx context.Context,
+	db *redis.Client,
+) (queueLen, processingLen int64, err error) {
+	tx := db.TxPipeline()
+
+	queueLenPipe := tx.LLen(ctx, workQueue.mainQueueKey)
+	processingLenPipe := tx.LLen(ctx, workQueue.processingKey)
+
+	_, err = tx.Exec(ctx)
+	if err == nil {
+		queueLen, err = queueLenPipe.Result()
+	}
+	if err == nil {
+		processingLen, err = processingLenPipe.Result()
+	}
+
+	return
+}
+
 // Return the length of the work queue (not including items being processed, see
-// [WorkQueue.Processing]).
+// [WorkQueue.Processing] or [WorkQueue.Counts] to get both).
 func (workQueue *WorkQueue) QueueLen(ctx context.Context, db *redis.Client) (int64, error) {
 	return db.LLen(ctx, workQueue.mainQueueKey).Result()
 }
