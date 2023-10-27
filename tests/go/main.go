@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"math/rand"
 	"os"
 	"time"
 
@@ -30,13 +28,10 @@ func main() {
 	if len(os.Args) < 2 {
 		panic("first command line argument must be redis host")
 	}
+
 	db := redis.NewClient(&redis.Options{
 		Addr: os.Args[1],
 	})
-
-	src := rand.NewSource(time.Now().UnixNano())
-	random := rand.New(src)
-
 	ctx := context.Background()
 
 	goResultsKey := workqueue.KeyPrefix("results:go:")
@@ -44,6 +39,7 @@ func main() {
 
 	goQueue := workqueue.NewWorkQueue(workqueue.KeyPrefix("go_jobs"))
 	sharedQueue := workqueue.NewWorkQueue(workqueue.KeyPrefix("shared_jobs"))
+
 	goJobCounter := 0
 	sharedJobCounter := 0
 
@@ -131,7 +127,7 @@ func main() {
 			// Pretend it takes us a while to compute the result
 			// Sometimes this will take too long and we'll timeout
 			if goJobCounter%25 == 0 {
-				//time.Sleep(time.Duration(goJobCounter%20) * time.Second)
+				time.Sleep(time.Duration(goJobCounter%20) * time.Second)
 			}
 
 			// Store the result
@@ -157,59 +153,19 @@ func main() {
 					if err != nil {
 						panic(err)
 					}
-					if random.Intn(10) < 5 {
-						for i := 0; i < 3; i++ {
-							go func() {
-								for i := 0; i < 10; i++ {
-									_, err = sharedQueue.AddNewItem(ctx, db, item)
-									if err != nil {
-										fmt.Println(err)
-									}
-								}
-							}()
-						}
-					} else {
-						for i := 0; i < 3; i++ {
-							go func() {
-								for i := 0; i < 10; i++ {
-									_, err = AddNewItemWithSleep(ctx, db, item, &sharedQueue, workqueue.KeyPrefix("shared_jobs").Of(":processing"), workqueue.KeyPrefix("shared_jobs").Of(":queue"))
-									if err != nil {
-										fmt.Println(err)
-									}
-								}
-							}()
-						}
+					err = sharedQueue.AddItem(ctx, db, item)
+					if err != nil {
+						panic(err)
 					}
-					item2, err := workqueue.NewItemFromJSONData(SharedJobData{
+
+					item, err = workqueue.NewItemFromJSONData(SharedJobData{
 						A: 11,
 						B: int(job.Data[0]),
 					})
 					if err != nil {
 						panic(err)
 					}
-					if random.Intn(10) < 5 {
-						for i := 0; i < 3; i++ {
-							go func() {
-								for i := 0; i < 10; i++ {
-									_, err = sharedQueue.AddNewItem(ctx, db, item2)
-									if err != nil {
-										fmt.Println(err)
-									}
-								}
-							}()
-						}
-					} else {
-						for i := 0; i < 3; i++ {
-							go func() {
-								for i := 0; i < 10; i++ {
-									_, err = AddNewItemWithSleep(ctx, db, item2, &sharedQueue, workqueue.KeyPrefix("shared_jobs").Of(":processing"), workqueue.KeyPrefix("shared_jobs").Of(":queue"))
-									if err != nil {
-										fmt.Println(err)
-									}
-								}
-							}()
-						}
-					}
+					err = sharedQueue.AddItem(ctx, db, item)
 					if err != nil {
 						panic(err)
 					}
@@ -219,46 +175,4 @@ func main() {
 			}
 		}
 	}
-}
-
-func AddNewItemWithSleep(ctx context.Context, db *redis.Client, item workqueue.Item, workQueue *workqueue.WorkQueue, mainKey, processingKey string) (bool, error) {
-	txf := func(tx *redis.Tx) error {
-
-		processingItemsInQueueCmd := tx.LPos(ctx, processingKey, item.ID, redis.LPosArgs{
-			Rank:   0,
-			MaxLen: 0,
-		})
-		workingItemsInQueueCmd := tx.LPos(ctx, mainKey, item.ID, redis.LPosArgs{
-			Rank:   0,
-			MaxLen: 0,
-		})
-
-		_, ProcessingQueueCheck := processingItemsInQueueCmd.Result()
-		_, WorkingQueueCheck := workingItemsInQueueCmd.Result()
-
-		if ProcessingQueueCheck == redis.Nil && WorkingQueueCheck == redis.Nil {
-			time.Sleep(100 * time.Millisecond)
-			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-				workQueue.AddItemToPipeline(ctx, pipe, item)
-				_, err := pipe.Exec(ctx)
-				return err
-			})
-			return err
-		} else {
-			return nil
-		}
-	}
-
-	for i := 0; i < 100; i++ {
-		err := db.Watch(ctx, txf, processingKey, mainKey)
-		if err == nil {
-			return true, nil
-		}
-		if err == redis.TxFailedErr {
-			continue
-		}
-		return false, err
-	}
-
-	return false, errors.New("increment reached maximum number of retries")
 }

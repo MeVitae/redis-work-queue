@@ -35,9 +35,11 @@ while doom_counter < 20:
     elif counter % 2 == 0:
         # Every other tick just log how much work is left
         for queue in queue_list:
-            print(queue.counts(db))
+            print(queue._main_queue_key)
+            print((queue.queue_len(db), queue.processing(db)))
 
-        print(shared_queue.counts(db))
+        print(shared_queue._main_queue_key)
+        print((shared_queue.queue_len(db), shared_queue.processing(db)))
         sleep(0.5)
     elif counter == 501:
         # After a little bit, add more jobs.

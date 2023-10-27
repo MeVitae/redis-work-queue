@@ -1,11 +1,12 @@
 import sys
 import json
 from time import sleep
-import threading
+
 import redis
-import random
+
 sys.path.append('../python')
 from redis_work_queue import KeyPrefix, Item, WorkQueue
+
 
 if len(sys.argv) < 2:
     raise Exception("first command line argument must be redis host")
@@ -22,39 +23,7 @@ shared_queue = WorkQueue(KeyPrefix("shared_jobs"))
 python_job_counter = 0
 shared_job_counter = 0
 
-def add_new_item_with_sleep(self, db: redis.Redis, item: Item) -> bool:
-        while True:
-            try:
-                pipeline = db.pipeline(transaction=True)
-                pipeline.watch(self._main_queue_key, self._processing_key)
-
-                if (
-                    pipeline.lpos(self._main_queue_key, item.id()) is not None
-                    or pipeline.lpos(self._processing_key, item.id()) is not None
-                ):
-                    pipeline.unwatch()
-                    return False
-                sleep(0.1)
-                pipeline.multi()
-
-                self.add_item_to_pipeline(pipeline, item)
-
-                pipeline.execute()
-                return True
-
-            except redis.WatchError:
-                continue
-            except Exception as e:
-                print(f"Error: {e}")
-                raise
-
 shared = False
-def add_new_items(work_queue,db, item):
-    for _ in range(10):
-        if random.choice([True, False]):
-            work_queue.add_new_item(db, item)
-        else:
-            add_new_item_with_sleep(work_queue,db, item)
 while True:
     shared = not shared
     if shared:
@@ -128,23 +97,13 @@ while True:
             # If we succesfully completed the result, create two new shared jobs.
             if python_queue.complete(db, job):
                 print("Spawning shared jobs")
-                item = Item.from_json_data({
-                        'a': 13,
-                        'b': result,
-                    })
-                item2 = Item.from_json_data({
-                        'a': 17,
-                        'b': result,
-                    })
-                threads = []
-                for _ in range(0,3):
-                    thread = threading.Thread(target=add_new_items, args=(shared_queue,db, item))
-                    threads.append(thread)
-                    thread = threading.Thread(target=add_new_items, args=(shared_queue,db, item2))
-                    threads.append(thread)
-                for thread in threads:
-                    thread.start()
-                for thread in threads:
-                    thread.join()
+                shared_queue.add_item(db, Item.from_json_data({
+                    'a': 13,
+                    'b': result,
+                }))
+                shared_queue.add_item(db, Item.from_json_data({
+                    'a': 17,
+                    'b': result,
+                }))
         else:
             print("Dropping")
