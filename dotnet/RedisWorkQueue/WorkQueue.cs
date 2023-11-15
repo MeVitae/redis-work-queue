@@ -44,8 +44,8 @@ namespace RedisWorkQueue
             this.Session = name.Of(Guid.NewGuid().ToString());
             this.MainQueueKey = name.Of(":queue");
             this.ProcessingKey = name.Of(":processing");
-            this.LeaseKey = KeyPrefix.Concat(name, ":leased_by_session:");
-            this.ItemDataKey = KeyPrefix.Concat(name, ":item:");
+            this.LeaseKey = name.Concat(":leased_by_session:");
+            this.ItemDataKey = name.Concat(":item:");
         }
 
         /// <summary>
