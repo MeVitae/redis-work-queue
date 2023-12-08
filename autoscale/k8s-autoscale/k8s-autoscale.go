@@ -64,7 +64,7 @@ type Config struct {
 	// Redis options for accessing work queues.
 	Redis redis.Options
 	// QueueNamePrefix is the prefix used for generating queue names.
-	QueueNamePrefix string
+	QueueNamePrefix string `yaml:"queueNamePrefix"`
 	// SegmentedDeployments determines if the k8s deployments interface should be wrapped in `SegmentedDeployments`.
 	//
 	// This allows deployment counts to be segmented.
