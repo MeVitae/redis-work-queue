@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path"
 
@@ -44,6 +45,12 @@ type Deployment struct {
 
 	// VolumeMounts for the generated containers.
 	VolumeMounts []core.VolumeMountApplyConfiguration `yaml:"volumeMounts"`
+
+	// Env config for the pods.
+	Env []core.EnvVarApplyConfiguration
+
+	// NodeSelector to apply to the pods.
+	NodeSelector map[string]string
 
 	// Spot determines if the worker should only run on spot machines.
 	//
@@ -93,6 +100,7 @@ func (deployment *Deployment) Generate() *apps.DeploymentApplyConfiguration {
 						Image:        &deployment.Image,
 						Resources:    deployment.Resources,
 						VolumeMounts: deployment.VolumeMounts,
+						Env:          deployment.Env,
 					}},
 					RestartPolicy: ptr(corev1.RestartPolicyAlways),
 					Volumes:       deployment.Volumes,
@@ -101,15 +109,22 @@ func (deployment *Deployment) Generate() *apps.DeploymentApplyConfiguration {
 		},
 	}
 	if deployment.Spot {
-		deploymentConfig.Spec.Template.Spec.NodeSelector = map[string]string{
-			"cloud.google.com/gke-spot": "true",
+		var nodeSelector map[string]string
+		if deployment.NodeSelector != nil {
+			nodeSelector = maps.Clone(deployment.NodeSelector)
+		} else {
+			nodeSelector = make(map[string]string)
 		}
+		nodeSelector["cloud.google.com/gke-spot"] = "true"
+		deploymentConfig.Spec.Template.Spec.NodeSelector = nodeSelector
 		deploymentConfig.Spec.Template.Spec.Tolerations = []core.TolerationApplyConfiguration{{
 			Key:      ptr("cloud.google.com/gke-spot"),
 			Operator: ptr(corev1.TolerationOpEqual),
 			Value:    ptr("true"),
 			Effect:   ptr(corev1.TaintEffectNoSchedule),
 		}}
+	} else {
+		deploymentConfig.Spec.Template.Spec.NodeSelector = deployment.NodeSelector
 	}
 	return deploymentConfig
 }
