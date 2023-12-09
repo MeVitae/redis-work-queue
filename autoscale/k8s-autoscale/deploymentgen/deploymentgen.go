@@ -1,17 +1,14 @@
-package main
+package deploymentgen
 
 import (
-	"fmt"
+	"io"
 	"maps"
-	"os"
-	"path"
-
-	"sigs.k8s.io/yaml"
 
 	corev1 "k8s.io/api/core/v1"
 	apps "k8s.io/client-go/applyconfigurations/apps/v1"
 	core "k8s.io/client-go/applyconfigurations/core/v1"
 	meta "k8s.io/client-go/applyconfigurations/meta/v1"
+	"sigs.k8s.io/yaml"
 )
 
 func ptr[T any](value T) *T {
@@ -129,12 +126,30 @@ func (deployment *Deployment) Generate() *apps.DeploymentApplyConfiguration {
 	return deploymentConfig
 }
 
-// AddSpot adds spot workers for all workers in deployments with AddSpot set to true.
-func AddSpot(deployments []Deployment) []Deployment {
-	count := len(deployments)
-	for idx := 0; idx < count; idx++ {
-		deployment := &deployments[idx]
+// GenerateAll the Kubernetes deployments from a list of deployment descriptions.
+//
+// You should use AddSpot before calling this.
+func GenerateAll(deployments []Deployment) []*apps.DeploymentApplyConfiguration {
+	k8sDeployments := make([]*apps.DeploymentApplyConfiguration, 0, len(deployments))
+	for _, deployment := range deployments {
 		if deployment.AddSpot {
+			panic("AddSpot was not called before GenerateAll")
+		}
+		k8sDeployments = append(k8sDeployments, deployment.Generate())
+	}
+	return k8sDeployments
+}
+
+// AddSpot adds spot workers for all workers in deployments with AddSpot set to true.
+//
+// This sets AddSpot to false for the deployments processed copied.
+func AddSpot(deployments *[]Deployment) {
+	count := len(*deployments)
+	for idx := 0; idx < count; idx++ {
+		deployment := &(*deployments)[idx]
+		if deployment.AddSpot {
+			// Remove AddSpot since we're adding it now
+			deployment.AddSpot = false
 			if deployment.Spot {
 				panic("cannot add spot to spot deployment")
 			}
@@ -143,73 +158,28 @@ func AddSpot(deployments []Deployment) []Deployment {
 			spotDeployment.DefaultScale = 0
 			spotDeployment.Name += "-spot"
 			spotDeployment.PodName += "-spot"
-			deployments = append(deployments, spotDeployment)
+			*deployments = append(*deployments, spotDeployment)
 		}
 	}
-	return deployments
 }
 
-func main() {
-	if len(os.Args) != 2 || os.Args[1] == "-h" || os.Args[1] == "--help" {
-		bin := path.Base(os.Args[0])
-		fmt.Fprint(os.Stderr, "Usage: ", bin, " deployments.yaml\n\n")
-		fmt.Fprint(os.Stderr, "Output the Kubernetes deployments to stdout\n\n")
-		fmt.Fprint(os.Stderr, "Example deployment: ", bin, " deployments.yaml | kubectl apply -f\n\n")
-		fmt.Fprintln(os.Stderr, "The deployment.yaml file should contain a list of Deployment entries:")
-		fmt.Fprintln(os.Stderr, `
-    namespace: string, the namespace of the Kubernetes deployment
-
-    name: string, of the Kubernetes deployment
-
-    podName: string, the name of the pods created by the deployment, and the value of the "app" label.
-
-    image: string, the container image to use.
-
-    defaultScale: int32, the default number of replicas.
-
-    revisionHistoryLimit: int32, the number of past deployment revisions kept around.
-
-    resources: the resource requests and limits for the pods,
-               see https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-
-    spot: bool, determines if the worker should only run on spot machines.
-                This is currently only supported on GKE, though support for AKS is planned.
-                Currently, it adds the "cloud.google.com/gke-spot" node selector toleration to the pods.
-
-    addSpot: bool, if true, causes a new spot deployment to be automatically created.
-                   The new deployment will have "-spot" appended to its Name and PodName, it will
-                   have its DefaultScale set to 0, and Spot set to true.`)
-		if len(os.Args) != 2 || os.Args[1] != "-h" && os.Args[1] != "--help" {
-			os.Exit(1)
-		}
-		return
-	}
-
-	// Parse the deployments
-	filePath := os.Args[1]
-	deploymentsYaml, err := os.ReadFile(filePath)
-	if err != nil {
-		panic(fmt.Errorf("Failed to read %s: %w", filePath, err))
-	}
-	var deployments []Deployment
-	yaml.Unmarshal(deploymentsYaml, &deployments)
-	if err != nil {
-		panic(fmt.Errorf("Failed to parse %s: %w", filePath, err))
-	}
-
-	// Add spot workers if requested
-	deployments = AddSpot(deployments)
-
-	// Generate the Kubernetes deployments!
-	for idx, deployment := range deployments {
+// WriteMultipleYaml writes multiple YAML items, separeted by "---", to w.
+func WriteMultipleYaml[T any](w io.Writer, items []T) error {
+	for idx, item := range items {
 		if idx != 0 {
-			fmt.Println("---")
+			_, err := w.Write([]byte("---"))
+			if err != nil {
+				return err
+			}
 		}
-		spec := deployment.Generate()
-		data, err := yaml.Marshal(spec)
+		data, err := yaml.Marshal(item)
 		if err != nil {
-			panic(err)
+			return err
 		}
-		os.Stdout.Write(data)
+		_, err = w.Write(data)
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
