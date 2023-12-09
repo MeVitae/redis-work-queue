@@ -9,10 +9,10 @@ replace github.com/mevitae/redis-work-queue/autoscale/k8s-scale => ../k8s-scale
 replace github.com/mevitae/redis-work-queue/autoscale/wqautoscale => ../wqautoscale
 
 require (
-	github.com/mevitae/redis-work-queue/autoscale/interfaces v0.1.6-alpha.2
-	github.com/mevitae/redis-work-queue/autoscale/k8s-scale v0.1.6-alpha.2
-	github.com/mevitae/redis-work-queue/autoscale/wqautoscale v0.1.6-alpha.2
-	github.com/mevitae/redis-work-queue/go v0.1.5
+	github.com/mevitae/redis-work-queue/autoscale/interfaces v0.1.6-alpha.3
+	github.com/mevitae/redis-work-queue/autoscale/k8s-scale v0.1.6-alpha.3
+	github.com/mevitae/redis-work-queue/autoscale/wqautoscale v0.1.6-alpha.3
+	github.com/mevitae/redis-work-queue/go v0.1.6-alpha.3
 	github.com/redis/go-redis/v9 v9.3.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.28.4

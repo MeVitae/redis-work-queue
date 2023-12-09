@@ -5,7 +5,7 @@ go 1.20
 replace github.com/mevitae/redis-work-queue/autoscale/interfaces => ../interfaces
 
 require (
-	github.com/mevitae/redis-work-queue/autoscale/interfaces v0.1.6-alpha.2
+	github.com/mevitae/redis-work-queue/autoscale/interfaces v0.1.6-alpha.3
 	k8s.io/api v0.28.4
 	k8s.io/apimachinery v0.28.4
 	k8s.io/client-go v0.28.4
