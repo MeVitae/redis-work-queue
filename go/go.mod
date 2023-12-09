@@ -3,8 +3,8 @@ module github.com/mevitae/redis-work-queue/go
 go 1.20
 
 require (
-	github.com/google/uuid v1.3.0
-	github.com/redis/go-redis/v9 v9.0.2
+	github.com/google/uuid v1.4.0
+	github.com/redis/go-redis/v9 v9.3.0
 )
 
 require (
