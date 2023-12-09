@@ -167,7 +167,7 @@ func AddSpot(deployments *[]Deployment) {
 func WriteMultipleYaml[T any](w io.Writer, items []T) error {
 	for idx, item := range items {
 		if idx != 0 {
-			_, err := w.Write([]byte("---"))
+			_, err := w.Write([]byte("\n---\n"))
 			if err != nil {
 				return err
 			}
