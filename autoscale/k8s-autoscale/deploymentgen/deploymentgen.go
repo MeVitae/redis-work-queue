@@ -71,15 +71,15 @@ func (deployment *Deployment) Generate() *apps.DeploymentApplyConfiguration {
 			APIVersion: ptr("apps/v1"),
 		},
 		ObjectMetaApplyConfiguration: &meta.ObjectMetaApplyConfiguration{
-			Name:      &deployment.Name,
-			Namespace: &deployment.Namespace,
+			Name:      ptr(deployment.Name),
+			Namespace: ptr(deployment.Namespace),
 			Labels: map[string]string{
 				"app": deployment.PodName,
 			},
 		},
 		Spec: &apps.DeploymentSpecApplyConfiguration{
-			Replicas:             &deployment.DefaultScale,
-			RevisionHistoryLimit: &deployment.RevisionHistoryLimit,
+			Replicas:             ptr(deployment.DefaultScale),
+			RevisionHistoryLimit: ptr(deployment.RevisionHistoryLimit),
 			Selector: &meta.LabelSelectorApplyConfiguration{
 				MatchLabels: map[string]string{
 					"app": deployment.PodName,
@@ -93,8 +93,8 @@ func (deployment *Deployment) Generate() *apps.DeploymentApplyConfiguration {
 				},
 				Spec: &core.PodSpecApplyConfiguration{
 					Containers: []core.ContainerApplyConfiguration{{
-						Name:         &deployment.PodName,
-						Image:        &deployment.Image,
+						Name:         ptr(deployment.PodName),
+						Image:        ptr(deployment.Image),
 						Resources:    deployment.Resources,
 						VolumeMounts: deployment.VolumeMounts,
 						Env:          deployment.Env,
