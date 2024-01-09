@@ -430,21 +430,21 @@ func (slowdown *slowDown) GetMinScale() int32 {
 
 type Config struct {
 	// Jobs maps a job name to its config.
-	Jobs map[string]JobConfig
+	Jobs map[string]JobConfig `yaml:"jobs" json:"jobs"`
 }
 
 type JobConfig struct {
 	// WorkQueueName is the name of the work queue to scale for.
-	QueueName string `yaml:"queueName"`
+	QueueName string `yaml:"queueName" json:"queueName"`
 	// DeploymentTiers of the workers running this job.
-	DeploymentTiers []DeploymentTierConfig `yaml:"deploymentTiers"`
+	DeploymentTiers []DeploymentTierConfig `yaml:"deploymentTiers" json:"deploymentTiers"`
 	// RunTime is the average time taken for a job to complete on a single worker.
-	RunTime int32 `yaml:"runTime"`
+	RunTime int32 `yaml:"runTime" json:"runTime"`
 	// Timeout is the time for a job to timeout in the work queue.
-	Timeout int32
+	Timeout int32 `yaml:"timeout" json:"timeout"`
 	// Children is a map of other job names to the average number of jobs of that type spawned by
 	// one job of this type.
-	Children map[string]float32
+	Children map[string]float32 `yaml:"children" json:"children"`
 }
 
 func (config *JobConfig) ToJob(
@@ -523,22 +523,22 @@ func (config *Config) GetScaleOrder() (order []string, err error) {
 }
 
 type DeploymentTierConfig struct {
-	DeploymentName string `yaml:"deploymentName"`
-	MinScale       int32  `yaml:"minScale"`
-	MaxScale       int32  `yaml:"maxScale"`
-	SpinupTime     int32  `yaml:"spinupTime"`
-	TargetTime     int32  `yaml:"targetTime"`
+	DeploymentName string `yaml:"deploymentName" json:"deploymentName"`
+	MinScale       int32  `yaml:"minScale" json:"minScale"`
+	MaxScale       int32  `yaml:"maxScale" json:"maxScale"`
+	SpinupTime     int32  `yaml:"spinupTime" json:"spinupTime"`
+	TargetTime     int32  `yaml:"targetTime" json:"targetTime"`
 	// ManualSlowdownDuration sets the duration of the window for SlowDown.
 	// If 0, this is set automatically based on TargetTime.
-	ManualSlowdownDuration int32 `yaml:"manualSlowdownDuration"`
+	ManualSlowdownDuration int32 `yaml:"manualSlowdownDuration" json:"manualSlowdownDuration"`
 	// SlowupDuration sets the duration of the window for reversed SlowDown (slow scaling up).
 	// If 0, slowup isn't used.
-	SlowupDuration int64 `yaml:"slowupDuration"`
+	SlowupDuration int64 `yaml:"slowupDuration" json:"slowupDuration"`
 	// FlakyBaseWorkers, if true, indicates that the number of requested base workers shouldn't be
 	// relied upon. That is, the number of actually ready workers should be used instead. This
 	// shouldn't be used without the use of `SlowupDuration` in tendem, otherwise, when base workers
 	// are requested, they will also be requested
-	FlakyBaseWorkers bool `yaml:"flakyBaseWorkers"`
+	FlakyBaseWorkers bool `yaml:"flakyBaseWorkers" json:"flakyBaseWorkers"`
 }
 
 // SlowdownDuration returns the duration of the window for SlowDown.
