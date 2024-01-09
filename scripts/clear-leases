@@ -1,0 +1,18 @@
+#!/bin/bash
+
+if [ "$1" == "-h" -o "$1" == "--help" ]; then
+    echo "Usage  $0                   clear all leases for all queues"
+    echo "   or  $0 queue-key-prefix  clear all leases for the specified queue"
+    exit
+fi
+
+QUEUE="$1"
+if [ -z "$QUEUE" ]; then
+    QUEUE="*"
+fi
+if [ "$QUEUE" == "*" ]; then
+    echo Deleting all leases for all queues.
+else
+    echo Deleting all lease for queue: $QUEUE.
+fi
+redis-cli --raw KEYS "$QUEUE:leased_by_session:*" | xargs redis-cli DEL
