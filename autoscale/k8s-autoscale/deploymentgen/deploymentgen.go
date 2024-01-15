@@ -28,6 +28,9 @@ type Deployment struct {
 	// Image is the container image to use.
 	Image string
 
+	// ImagePullPolicy to create the container with
+	ImagePullPolicy *corev1.PullPolicy `yaml:"ImagePullPolicy"`
+
 	// DefaultScale is the default number of replicas.
 	DefaultScale int32 `yaml:"defaultScale"`
 
@@ -93,11 +96,12 @@ func (deployment *Deployment) Generate() *apps.DeploymentApplyConfiguration {
 				},
 				Spec: &core.PodSpecApplyConfiguration{
 					Containers: []core.ContainerApplyConfiguration{{
-						Name:         ptr(deployment.PodName),
-						Image:        ptr(deployment.Image),
-						Resources:    deployment.Resources,
-						VolumeMounts: deployment.VolumeMounts,
-						Env:          deployment.Env,
+						Name:            ptr(deployment.PodName),
+						Image:           ptr(deployment.Image),
+						ImagePullPolicy: deployment.ImagePullPolicy,
+						Resources:       deployment.Resources,
+						VolumeMounts:    deployment.VolumeMounts,
+						Env:             deployment.Env,
 					}},
 					RestartPolicy: ptr(corev1.RestartPolicyAlways),
 					Volumes:       deployment.Volumes,
