@@ -116,6 +116,9 @@ type job struct {
 	// Children is a map of other job names to the average number of jobs of that type spawned by
 	// one job of this type completing.
 	Children map[string]float32
+
+	// IgnoreAbandoned causes abandoned jobs to be ignored when calculating scale.
+	IgnoreAbandoned bool
 }
 
 // AverageTimes returns the average spinup and average target time of the deployments.
@@ -132,6 +135,32 @@ func (job *job) AverageTimes() (spinup int32, target int32) {
 	return
 }
 
+func (tier *deploymentTier) CurrentWorkers(ctx context.Context) (currentScale int32, err error) {
+	currentScale, err = tier.Deployment.GetReady(ctx)
+	if err != nil {
+		err = fmt.Errorf("failed to get ready count: %w", err)
+	}
+	if tier.WorkersPerPod <= 0 {
+		// This shouldn't occur, since the `ToJob` method defaults WorkersPerPod to 1 if it's 0.
+		panic("invalid WorkersPerPod value: " + strconv.FormatInt(int64(tier.WorkersPerPod), 10))
+	} else {
+		currentScale *= tier.WorkersPerPod
+	}
+	return
+}
+
+func (job *job) CurrentWorkers(ctx context.Context) (int32, error) {
+	currentWorkers := int32(0)
+	for idx := range job.DeploymentTiers {
+		tierWorkers, err := job.DeploymentTiers[idx].CurrentWorkers(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("failed to get current workers for tier %d: %w", idx, err)
+		}
+		currentWorkers += tierWorkers
+	}
+	return currentWorkers, nil
+}
+
 // Scale the workers for a job and return the expected rate of job completions.
 func (job *job) Scale(
 	ctx context.Context,
@@ -139,12 +168,35 @@ func (job *job) Scale(
 	incomingRate float32,
 	reporter interfaces.ScaleReporter,
 ) (float32, error) {
+	currentWorkers, err := job.CurrentWorkers(ctx)
+	if err != nil {
+		return 0, err
+	}
+
 	qlen, processing, err := job.Queue.Counts(ctx)
+	// If there are more jobs being processed then there are workers, then assume all the rest are
+	// abandoned.
+	abandoned := int32(0)
+	if currentWorkers < processing {
+		abandoned = processing - currentWorkers
+		processing = currentWorkers
+		// Correct the incoming rate based on the number of abandoned jobs which will be recycled
+		if !job.IgnoreAbandoned {
+			incomingRate += float32(abandoned) / float32(job.Timeout)
+		}
+	}
 	qlen += processing
-	fmt.Printf(
-		"Scaling %s. Queue length %d (including %d being processed). Incoming rate: %v jobs/min.\n",
-		job.QueueName, qlen, processing, math.Ceil(float64(incomingRate)*1000*60),
-	)
+	if abandoned == 0 {
+		fmt.Printf(
+			"Scaling %s. Queue length %d (including %d being processed). Incoming rate: %v jobs/min.\n",
+			job.QueueName, qlen, processing, math.Ceil(float64(incomingRate)*1000*60),
+		)
+	} else {
+		fmt.Printf(
+			"Scaling %s. Queue length %d (including %d being processed), at least %d jobs abandoned. Incoming rate: %v jobs/min.\n",
+			job.QueueName, qlen, processing, abandoned, math.Ceil(float64(incomingRate)*1000*60),
+		)
+	}
 	if err != nil {
 		return 0, fmt.Errorf("failed to get queue length: %w", err)
 	}
@@ -501,6 +553,9 @@ type JobConfig struct {
 	// workers is divided by this factor before being requested from the underlying deployment. This
 	// can be overriden locally by the field of the same name in DeploymentTierConfig.
 	WorkersPerPod int32 `yaml:"workersPerPod" json:"workersPerPod"`
+
+	// IgnoreAbandoned causes abandoned jobs to be ignored when calculating scale.
+	IgnoreAbandoned bool `yaml:"ignoreAbandoned" json:"ignoreAbandoned"`
 }
 
 func (config *JobConfig) ToJob(
@@ -536,6 +591,7 @@ func (config *JobConfig) ToJob(
 		RunTime:         config.RunTime,
 		Timeout:         config.Timeout,
 		Children:        config.Children,
+		IgnoreAbandoned: config.IgnoreAbandoned,
 	}, nil
 }
 
