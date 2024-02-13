@@ -318,12 +318,12 @@ func (tier *deploymentTier) Scale(
 		// This shouldn't occur, since the `ToJob` method defaults WorkersPerPod to 1 if it's 0.
 		panic("invalid WorkersPerPod value: " + strconv.FormatInt(int64(tier.WorkersPerPod), 10))
 	} else if tier.WorkersPerPod == 1 {
-		fmt.Printf("Tier has %d active workers of %d requested", currentScale, requestedScale)
+		fmt.Printf("Tier has %d workers active of %d workers requested", currentScale, requestedScale)
 	} else {
 		fmt.Printf(
-			"Tier has %d active workers (%d pods) of %d (%d pods) requested",
+			"Tier has %d workers (%d pods) active of %d workers (%d pods) requested",
 			currentScale*tier.WorkersPerPod, currentScale,
-			requestedScale, requestedScale*tier.WorkersPerPod,
+			requestedScale*tier.WorkersPerPod, requestedScale,
 		)
 		// Correct the scale based on the workers per deployment pod
 		currentScale *= tier.WorkersPerPod

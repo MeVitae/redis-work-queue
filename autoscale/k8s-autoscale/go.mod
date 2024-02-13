@@ -11,7 +11,7 @@ replace github.com/mevitae/redis-work-queue/autoscale/wqautoscale => ../wqautosc
 require (
 	github.com/mevitae/redis-work-queue/autoscale/interfaces v0.1.6-alpha.3
 	github.com/mevitae/redis-work-queue/autoscale/k8s-scale v0.1.6-alpha.3
-	github.com/mevitae/redis-work-queue/autoscale/wqautoscale v0.2.0-alpha.2
+	github.com/mevitae/redis-work-queue/autoscale/wqautoscale v0.2.0-alpha.3
 	github.com/mevitae/redis-work-queue/go v0.1.6-alpha.3
 	github.com/redis/go-redis/v9 v9.3.0
 	gopkg.in/yaml.v3 v3.0.1
