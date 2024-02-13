@@ -1,11 +1,10 @@
-package deploymentgen
+package main
 
 import (
 	"fmt"
 	"os"
 	"path"
 
-	apps "k8s.io/client-go/applyconfigurations/apps/v1"
 	"sigs.k8s.io/yaml"
 
 	"github.com/mevitae/redis-work-queue/autoscale/k8s-autoscale/deploymentgen"
