@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strconv"
 
 	"github.com/mevitae/redis-work-queue/autoscale/interfaces"
 )
@@ -261,13 +262,45 @@ func (tier *deploymentTier) Scale(
 		err = fmt.Errorf("failed to get requested count: %w", err)
 		return
 	}
-	fmt.Print("Tier has ", currentScale, " active workers of ", requestedScale, " requested")
+	if tier.WorkersPerPod <= 0 {
+		// This shouldn't occur, since the `ToJob` method defaults WorkersPerPod to 1 if it's 0.
+		panic("invalid WorkersPerPod value: " + strconv.FormatInt(int64(tier.WorkersPerPod), 10))
+	} else if tier.WorkersPerPod == 1 {
+		fmt.Printf("Tier has %d active workers of %d requested", currentScale, requestedScale)
+	} else {
+		fmt.Printf(
+			"Tier has %d active workers (%d pods) of %d (%d pods) requested",
+			currentScale*tier.WorkersPerPod, currentScale,
+			requestedScale, requestedScale*tier.WorkersPerPod,
+		)
+		// Correct the scale based on the workers per deployment pod
+		currentScale *= tier.WorkersPerPod
+		requestedScale *= tier.WorkersPerPod
+	}
 
 	// If we have no choice over the number of workers, just set it.
 	if tier.MinScale == tier.MaxScale {
 		requestedScale = tier.MaxScale
-		fmt.Println(", scaling to", requestedScale, "(fixed scale)")
-		err = tier.Deployment.SetRequest(ctx, requestedScale)
+		if tier.WorkersPerPod <= 0 {
+			// This shouldn't occur, since the `ToJob` method defaults WorkersPerPod to 1 if it's 0.
+			panic("invalid WorkersPerPod value: " + strconv.FormatInt(int64(tier.WorkersPerPod), 10))
+		} else if tier.WorkersPerPod == 1 {
+			fmt.Printf(", scaling to %d (fixed scale)\n", requestedScale)
+			err = tier.Deployment.SetRequest(ctx, requestedScale)
+		} else {
+			// Calculate the number of pods we need
+			pods := roundUpDivision(requestedScale, tier.WorkersPerPod)
+			// Remember how many workers we asked for
+			wanted := requestedScale
+			// Then calculate how many we're actually requesting
+			requestedScale = pods * tier.WorkersPerPod
+			if wanted != requestedScale {
+				fmt.Printf(", scaling to %d workers (%d wanted, %d pods, fixed scale)\n", requestedScale, wanted, pods)
+			} else {
+				fmt.Printf(", scaling to %d workers (%d pods, fixed scale)\n", requestedScale, pods)
+			}
+			err = tier.Deployment.SetRequest(ctx, pods)
+		}
 		if err != nil {
 			err = fmt.Errorf("failed to set scale request: %w", err)
 		}
@@ -327,8 +360,22 @@ func (tier *deploymentTier) Scale(
 	if tier.MaxScale < scale {
 		scale = tier.MaxScale
 	}
-	fmt.Println(", scaling to", scale)
-	err = tier.Deployment.SetRequest(ctx, scale)
+	if tier.WorkersPerPod == 0 {
+		// This shouldn't occur, since the `ToJob` method defaults WorkersPerPod to 1 if it's 0.
+		panic("invalid WorkersPerPod value: " + strconv.FormatInt(int64(tier.WorkersPerPod), 10))
+	} else if tier.WorkersPerPod == 1 {
+		fmt.Printf(", scaling to %d\n", scale)
+		err = tier.Deployment.SetRequest(ctx, scale)
+	} else {
+		// Calculate the number of pods we need
+		pods := roundUpDivision(scale, tier.WorkersPerPod)
+		// Remember how many workers we asked for
+		wanted := scale
+		// Then calculate how many we're actually requesting
+		scale = pods * tier.WorkersPerPod
+		fmt.Printf(", scaling to %d workers (%d wanted, %d pods)\n", scale, wanted, pods)
+		err = tier.Deployment.SetRequest(ctx, pods)
+	}
 	if err != nil {
 		err = fmt.Errorf("failed to set scale request: %w", err)
 	}
@@ -436,15 +483,24 @@ type Config struct {
 type JobConfig struct {
 	// WorkQueueName is the name of the work queue to scale for.
 	QueueName string `yaml:"queueName" json:"queueName"`
+
 	// DeploymentTiers of the workers running this job.
 	DeploymentTiers []DeploymentTierConfig `yaml:"deploymentTiers" json:"deploymentTiers"`
+
 	// RunTime is the average time taken for a job to complete on a single worker.
 	RunTime int32 `yaml:"runTime" json:"runTime"`
+
 	// Timeout is the time for a job to timeout in the work queue.
 	Timeout int32 `yaml:"timeout" json:"timeout"`
+
 	// Children is a map of other job names to the average number of jobs of that type spawned by
 	// one job of this type.
 	Children map[string]float32 `yaml:"children" json:"children"`
+
+	// WorkersPerPod is the number of workers a single pod in the deployment provides. The number of
+	// workers is divided by this factor before being requested from the underlying deployment. This
+	// can be overriden locally by the field of the same name in DeploymentTierConfig.
+	WorkersPerPod int32 `yaml:"workersPerPod" json:"workersPerPod"`
 }
 
 func (config *JobConfig) ToJob(
@@ -458,6 +514,18 @@ func (config *JobConfig) ToJob(
 		tier, err := deploymentTierFromConfig(ctx, deployments, deploymentTierConfig, time)
 		if err != nil {
 			return job{}, fmt.Errorf("failed to construct deployment tier %v: %w", deploymentTierIdx, err)
+		}
+		// Default the tier WorkersPerPod to the config value
+		if tier.WorkersPerPod == 0 {
+			tier.WorkersPerPod = config.WorkersPerPod
+		}
+		// If it's still 0, default to 1 worker per pod
+		if tier.WorkersPerPod == 0 {
+			tier.WorkersPerPod = 1
+		} else if tier.WorkersPerPod < 0 {
+			// Also check that it isn't negative... That would make no sense!
+			// (It's not a uint since it needs to get multiplied by ints :( )
+			return job{}, fmt.Errorf("negative WorkersPerPod value in deployment tier %v: %d", deploymentTierIdx, tier.WorkersPerPod)
 		}
 		deploymentTiers = append(deploymentTiers, tier)
 	}
@@ -524,16 +592,30 @@ func (config *Config) GetScaleOrder() (order []string, err error) {
 
 type DeploymentTierConfig struct {
 	DeploymentName string `yaml:"deploymentName" json:"deploymentName"`
-	MinScale       int32  `yaml:"minScale" json:"minScale"`
-	MaxScale       int32  `yaml:"maxScale" json:"maxScale"`
-	SpinupTime     int32  `yaml:"spinupTime" json:"spinupTime"`
-	TargetTime     int32  `yaml:"targetTime" json:"targetTime"`
+
+	// MinScale is the minimum number of requested workers.
+	MinScale int32 `yaml:"minScale" json:"minScale"`
+
+	// MaxScale is the maximum number of requested workers.
+	MaxScale int32 `yaml:"maxScale" json:"maxScale"`
+
+	// WorkersPerPod is the number of workers a single pod in the deployment provides. The number of
+	// workers is divided by this factor before being requested from the underlying deployment.
+	WorkersPerPod int32 `yaml:"workersPerPod" json:"workersPerPod"`
+
+	// SpinupTime is the time you expect a pod to take to spin-up
+	SpinupTime int32 `yaml:"spinupTime" json:"spinupTime"`
+
+	TargetTime int32 `yaml:"targetTime" json:"targetTime"`
+
 	// ManualSlowdownDuration sets the duration of the window for SlowDown.
 	// If 0, this is set automatically based on TargetTime.
 	ManualSlowdownDuration int32 `yaml:"manualSlowdownDuration" json:"manualSlowdownDuration"`
+
 	// SlowupDuration sets the duration of the window for reversed SlowDown (slow scaling up).
 	// If 0, slowup isn't used.
 	SlowupDuration int64 `yaml:"slowupDuration" json:"slowupDuration"`
+
 	// FlakyBaseWorkers, if true, indicates that the number of requested base workers shouldn't be
 	// relied upon. That is, the number of actually ready workers should be used instead. This
 	// shouldn't be used without the use of `SlowupDuration` in tendem, otherwise, when base workers
@@ -581,4 +663,33 @@ func (config *DeploymentTierConfig) SlowdownDuration(jobRunTime, timeout, qlen i
 		}
 	}
 	return duration
+}
+
+// roundUpDivision of two positive integers
+//
+// Who knows what will happen if one's negative.
+func roundUpDivision(a, b int32) int32 {
+	return (a + b - 1) / b
+
+	// If b = 1, then this is trivial:
+	// floor((a + b - 1) / b)
+	// = floor(a/1)
+	// = ceil(a/1)
+	// = ceil(a/b)
+
+	// If b > 1
+	// = floor((a + b - 1) / b)
+	// = floor(a/b + 1 - 1/b)
+	//
+	// Now, if a/b is an integer, then:
+	// floor(a/b + 1 - 1/b)
+	// = a/b + floor(1 - 1/b)
+	// = a/b + 0              since b > 1
+	// = ceil(a/b)
+	//
+	// Otherwise:
+	// floor(a/b - 1/b + 1)
+	// = floor(a/b - 1/b) + 1
+	// = floor(a/b) + 1       since a is an integer, and a/b isn't
+	// = ceil(a/b)            since a/b isn't an integer
 }
