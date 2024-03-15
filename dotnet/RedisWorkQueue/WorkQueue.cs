@@ -138,7 +138,7 @@ namespace RedisWorkQueue
 
             var data = db.Get<byte[]>(ItemDataKey.Of(itemId));
             if (data == null)
-                data = new byte[0];
+                return null;
 
             db.SetEx(LeaseKey.Of(itemId), leaseSeconds, Encoding.UTF8.GetBytes(Session));
 

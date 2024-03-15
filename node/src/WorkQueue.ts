@@ -141,7 +141,7 @@ export class WorkQueue {
     let data: Buffer | null = await db.getBuffer(this.itemDataKey.of(itemId));
 
     if (data == null) {
-      data = Buffer.alloc(0);
+      return null;
     }
 
     // Setup the lease item.

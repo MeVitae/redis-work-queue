@@ -129,7 +129,7 @@ class WorkQueue(object):
         # If we got an item, fetch the associated data.
         data: bytes | None = db.get(self._item_data_key.of(item_id))
         if data is None:
-            data = bytes()
+            return None
 
         # Setup the lease item.
         # NOTE: Racing for a lease is ok.
