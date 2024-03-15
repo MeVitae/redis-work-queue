@@ -170,6 +170,9 @@ func (workQueue *WorkQueue) Lease(
 	// Get the item's data
 	data, err := db.Get(ctx, workQueue.itemDataKey.Of(itemId)).Bytes()
 	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
 		return nil, err
 	}
 

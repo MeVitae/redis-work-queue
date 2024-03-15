@@ -35,6 +35,8 @@ namespace RedisWorkQueue
         /// </summary>
         private KeyPrefix ItemDataKey { get; set; }
 
+        private string CleaningKey { get; set; }
+
         /// <summary>
         /// Creates a new instance of the WorkQueue class with based on name given name.
         /// </summary>
@@ -46,6 +48,7 @@ namespace RedisWorkQueue
             this.ProcessingKey = name.Of(":processing");
             this.LeaseKey = name.Concat(":leased_by_session:");
             this.ItemDataKey = name.Concat(":item:");
+            this.CleaningKey = name.Of(":cleaning");
         }
 
         /// <summary>
@@ -82,6 +85,17 @@ namespace RedisWorkQueue
         public long Processing(IRedisClient db)
         {
             return db.LLen(ProcessingKey);
+        }
+
+        /// <summary>
+        /// Checks if data exists for the specified item ID.
+        /// </summary>
+        /// <param name="db">The Redis client instance.</param>
+        /// <param name="itemId">The ID of the item to check.</param>
+        /// <returns>True if data exists, false otherwise.</returns>
+        public bool DataExists(IRedisClient db, string itemId)
+        {
+            return db.Exists(ItemDataKey.Of(itemId));
         }
 
         /// <summary>
@@ -135,7 +149,7 @@ namespace RedisWorkQueue
 
             var data = db.Get<byte[]>(ItemDataKey.Of(itemId));
             if (data == null)
-                data = new byte[0];
+                return null;
 
             db.SetEx(LeaseKey.Of(itemId), leaseSeconds, Encoding.UTF8.GetBytes(Session));
 
@@ -166,6 +180,50 @@ namespace RedisWorkQueue
             }
 
             return true;
+        }
+
+
+        /// <summary>
+        /// Moves abandoned/stuck in processing jobs back to the main work queue
+        /// First collects items in the processing queue
+        /// Then re adds items without a lease (due to expiry or never created) to the main queue and cleaning queue 
+        /// Next we do the same for items in cleaning queue, this handles cases when the cleaner crashes
+        /// </summary>
+        /// <param name="db">The Redis client instance</param>
+        public void LightClean(IRedisClient db)
+        {
+            var processing = db.LRange(ProcessingKey, 0, -1);
+            foreach (var item_id in processing)
+            {
+                if (!LeaseExists(db, item_id))
+                {
+                    Console.WriteLine($"{item_id} has no lease");
+                    db.LPush(CleaningKey, item_id);
+                    var removed = db.LRem(ProcessingKey, 0, item_id);
+                    if (removed > 0)
+                    {
+                        db.LPush(MainQueueKey, item_id);
+                        Console.WriteLine($"{item_id} was still in the processing queue, it was reset");
+                    }
+                    else
+                        Console.WriteLine($"{item_id} was no longer in the processing queue");
+                    db.LRem(CleaningKey, 0, item_id);
+                }
+            }
+
+            var forgot = db.LRange(CleaningKey, 0, -1);
+            foreach (var item_id in forgot)
+            {
+                Console.WriteLine($"{item_id} was forgotten in clean");
+                //FreeRedis LPos always returns a long
+                //need to confirm if -1 is returned in place of NIL
+                if (DataExists(db, item_id) && db.LPos(MainQueueKey, item_id) < 0 && db.LPos(ProcessingKey, item_id) < 0)
+                {
+                    db.LPush(MainQueueKey, item_id);
+                    Console.WriteLine($"{item_id} was not in any queue, it was reset");
+                }
+                db.LRem(CleaningKey, 0, item_id);
+            }
         }
     }
 }

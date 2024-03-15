@@ -341,10 +341,13 @@ impl WorkQueue {
         // If we got an item, fetch the associated data.
         let item = match item_id {
             Some(item_id) => Item {
-                data: db
-                    .get::<_, Vec<u8>>(self.item_data_key.of(&item_id))
+                data: match db
+                    .get::<_, Option<Vec<u8>>>(self.item_data_key.of(&item_id))
                     .await?
-                    .into_boxed_slice(),
+                {
+                    Some(data) => data.into_boxed_slice(),
+                    None => return Ok(None),
+                },
                 id: item_id,
             },
             None => return Ok(None),
