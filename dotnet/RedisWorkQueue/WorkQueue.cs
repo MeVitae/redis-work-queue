@@ -186,7 +186,7 @@ namespace RedisWorkQueue
             {
                 if (!LeaseExists(db, item_id))
                 {
-                    Console.WriteLine("{item_id} has not lease");
+                    Console.WriteLine($"{item_id} has no lease");
                     db.LPush(CleaningKey, item_id);
                     var removed = db.LRem(ProcessingKey, 0, item_id);
                     if (removed > 0)
