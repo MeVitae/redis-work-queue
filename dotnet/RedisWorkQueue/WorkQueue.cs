@@ -88,6 +88,17 @@ namespace RedisWorkQueue
         }
 
         /// <summary>
+        /// Checks if data exists for the specified item ID.
+        /// </summary>
+        /// <param name="db">The Redis client instance.</param>
+        /// <param name="itemId">The ID of the item to check.</param>
+        /// <returns>True if data exists, false otherwise.</returns>
+        public bool DataExists(IRedisClient db, string itemId)
+        {
+            return db.Exists(ItemDataKey.Of(itemId));
+        }
+
+        /// <summary>
         /// Checks if a lease exists for the specified item ID.
         /// </summary>
         /// <param name="db">The Redis client instance.</param>
@@ -206,7 +217,7 @@ namespace RedisWorkQueue
                 Console.WriteLine($"{item_id} was forgotten in clean");
                 //FreeRedis LPos always returns a long
                 //need to confirm if -1 is returned in place of NIL
-                if (!LeaseExists(db, item_id) && db.LPos(MainQueueKey, item_id) < 0 && db.LPos(ProcessingKey, item_id) < 0)
+                if (DataExists(db, item_id) && db.LPos(MainQueueKey, item_id) < 0 && db.LPos(ProcessingKey, item_id) < 0)
                 {
                     db.LPush(MainQueueKey, item_id);
                     Console.WriteLine($"{item_id} was not in any queue, it was reset");

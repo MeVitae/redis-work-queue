@@ -81,15 +81,25 @@ export class WorkQueue {
   }
 
   /**
-   * This method can be used to check if a Lease Exists or not for a itemId.
+   * This method can be used to check if data exists or not for a itemId.
+   *
+   * @param {Redis} db The Redis Connection.
+   * @param {string} itemId The itemId of the item you want to check if it has data.
+   * @returns {Promise<boolean>}
+   */
+  async dataExists(db: Redis, itemId: string): Promise<boolean> {
+    return await db.exists(this.itemDataKey.of(itemId)) !== 0;
+  }
+
+  /**
+   * This method can be used to check if a lease exists or not for a itemId.
    *
    * @param {Redis} db The Redis Connection.
    * @param {string} itemId The itemId of the item you want to check if it has a lease.
    * @returns {Promise<boolean>}
    */
   async leaseExists(db: Redis, itemId: string): Promise<boolean> {
-    const exists = await db.exists(this.leaseKey.of(itemId));
-    return exists !== 0;
+    return await db.exists(this.leaseKey.of(itemId)) !== 0;
   }
 
   /**
@@ -178,9 +188,8 @@ export class WorkQueue {
 
     const forgot: Array<string> = await db.lrange(this.cleaningKey, 0, -1);
     for (const itemId of forgot) {
-      const leaseExists: boolean = await this.leaseExists(db, itemId);
       if (
-        !leaseExists &&
+        (await this.dataExists(db, itemId))  &&
         (await db.lpos(this.mainQueueKey, itemId)) == null &&
         (await db.lpos(this.processingKey, itemId)) == null
       ) {

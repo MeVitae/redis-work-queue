@@ -75,7 +75,7 @@ class WorkQueue(object):
             if isinstance(item_id, bytes):
                 item_id = item_id.decode('utf-8')
             print(item_id, 'was forgotten in clean')
-            if not self._lease_exists(db, item_id) and \
+            if self._data_exists(db, item_id) and \
                     db.lpos(self._main_queue_key, item_id) is None and \
                     db.lpos(self._processing_key, item_id) is None:
                 # FIXME: this introcudes a race
@@ -84,6 +84,10 @@ class WorkQueue(object):
                 db.lpush(self._main_queue_key, item_id)
                 print(item_id, 'was not in any queue, it was reset')
             db.lrem(self._cleaning_key, 0, item_id)
+
+    def _data_exists(self, db: Redis, item_id: str) -> bool:
+        """True iff a lease on 'item_id' exists."""
+        return db.exists(self._item_data_key.of(item_id)) != 0
 
     def _lease_exists(self, db: Redis, item_id: str) -> bool:
         """True iff a lease on 'item_id' exists."""
