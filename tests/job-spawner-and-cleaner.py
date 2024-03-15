@@ -64,6 +64,8 @@ class ExternalCleaner:
         assert self.child.stdout is not None
         output = ""
         while not output.startswith("cleaned "):
+            if output != "":
+                print(output)
             output = self.child.stdout.readline().strip()
         assert output == "cleaned " + queue_name
 
@@ -116,7 +118,43 @@ while doom_counter < 20:
                 queue.add_item(db, Item(bytes([n])))
     else:
         # Otherwise, clean!
-        print("Cleaning")
+        print("Cleaning " + str(counter % 13))
+        # This creates all the possible messed-up cleaning cases:
+        if counter % 13 == 2 or counter % 13 == 3:
+            # Occasionally move items from processing -> cleaning
+            print(db.rpoplpush(KeyPrefix(shared_queue_name).of(":processing"), KeyPrefix(shared_queue_name).of(":cleaning")))
+        elif counter % 13 == 4:
+            # Occasionally move items from queue -> cleaning
+            print(db.rpoplpush(KeyPrefix(shared_queue_name).of(":queue"), KeyPrefix(shared_queue_name).of(":cleaning")))
+        elif counter % 13 == 5:
+            # Occasionally copy items from queue -> cleaning
+            items = db.lrange(KeyPrefix(shared_queue_name).of(":queue"), 0, 1)
+            print(items)
+            if len(items) > 0:
+                db.lpush(KeyPrefix(shared_queue_name).of(":cleaning"), items[0])
+        elif counter % 13 == 6:
+            # Occasionally copy items from processing -> cleaning
+            items = db.lrange(KeyPrefix(shared_queue_name).of(":processing"), 0, 1)
+            print(items)
+            if len(items) > 0:
+                db.lpush(KeyPrefix(shared_queue_name).of(":cleaning"), items[0])
+        elif counter % 13 == 7:
+            # Occasionally copy items from processing -> cleaning
+            items = db.lrange(KeyPrefix(shared_queue_name).of(":processing"), 0, 1)
+            print(items)
+            # And delete the lease...
+            if len(items) > 0:
+                item = str(items[0], 'utf-8')
+                db.delete(shared_queue._lease_key.of(item))
+                db.lpush(shared_queue._cleaning_key, item)
+        elif counter % 13 == 8:
+            # Occasionally move items from processing -> cleaning
+            item = db.rpoplpush(shared_queue._processing_key, shared_queue._cleaning_key)
+            print(item)
+            # And delete the lease...
+            if item is not None:
+                item = str(item, 'utf-8')
+                db.delete(shared_queue._lease_key.of(item))
         light_clean()
     # The `doom_counter` counts the number of consecutive times all the lengths are 0.
     doom_counter = doom_counter + 1 if all(map(
