@@ -254,7 +254,8 @@ total_count_keys = 0
 for key in shared_counts.keys():
     total_count_keys += shared_counts[key]
 
-maximum_allowed = total_count_keys/len(shared_counts)*1.2
+minimum_allowed = total_count_keys/len(shared_counts)*0.7
+maximum_allowed = total_count_keys/len(shared_counts)*1.3
 
 print("Maximum number of job counts:", maximum_allowed)
 
@@ -262,4 +263,5 @@ for key in shared_counts.keys():
     assert key in updated_names
     # Check that it's fairly well balanced
     print(key, "Job counts:", shared_counts[key])
+    assert minimum_allowed < shared_counts[key]
     assert shared_counts[key] < maximum_allowed
