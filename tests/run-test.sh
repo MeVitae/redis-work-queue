@@ -4,6 +4,7 @@ set -e
 # Default values
 tests=""
 host="localhost:6379"
+cleaner=""
 
 
 display_usage() {
@@ -11,6 +12,7 @@ display_usage() {
   echo "Options:"
   echo "  -t, --tests <categories> Specify test categories (go_jobs, python_jobs, rust_jobs, node_jobs, dotnet_jobs). Example use './run-test.sh --tests "go_jobs,python_jobs"'"
   echo "  -h, --host <hostname>    Set the host (default: localhost:6379)"
+  echo "  -c, --cleaner <binary>   Run <binary> <host> as the cleaner binary, see the docs in job-spawner-and-cleaner.py"
   echo "  -h, --help               Display this help message"
 }
 
@@ -27,6 +29,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--host)
       host="$2"
+      shift
+      shift
+      ;;
+    -c|--cleaner)
+      cleaner="$2"
       shift
       shift
       ;;
@@ -93,8 +100,10 @@ if [[ "$tests" == *"dotnet"* ]]; then
 fi
 
 if [[ "$tests" == *"node"* ]]; then
-    cd node
     echo "Installing Node.js dependencies"
+    cd ../node
+    npm install
+    cd ../tests/node
     npm ci
     echo "Running Node.js workers..."
     npm run test "$host" > /tmp/redis-work-queue-test-logs/node-worker-1.txt &
@@ -105,4 +114,4 @@ if [[ "$tests" == *"node"* ]]; then
 fi
 
 echo "Running spawner..."
-python3 job-spawner-and-cleaner.py "$host" "$tests"
+python3 job-spawner-and-cleaner.py "$host" "$tests" "$cleaner"
