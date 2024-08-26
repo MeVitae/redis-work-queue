@@ -23,7 +23,7 @@ class ItemAdder(ABC):
     After running some tests, the `check` method should be called to ensure that all cases within `add_item` actually occurred.
 Before running another set of tests, `reset` should be called."""
     @abstractmethod
-    def add_item(self, queue: WorkQueue, db: Redis, item: Item):
+    def add_item(self, queue: WorkQueue, db: Redis, item: Item) -> bool:
         ...
 
     @abstractmethod
@@ -35,14 +35,14 @@ Before running another set of tests, `reset` should be called."""
         ...
 
 
-class AddItem(ItemAdder):
-    """An ItemAdder using the default `WorkQueue.add_item` method, with no checks."""
+class AddUniqueItem(ItemAdder):
+    """An ItemAdder using the `WorkQueue.add_unique_item` method, with no checks."""
 
     def __init__(self):
         pass
 
     def add_item(self, queue: WorkQueue, db: Redis, item: Item) -> bool:
-        queue.add_item(db, item)
+        queue.add_unique_item(db, item)
         return True
 
     def check(self) -> bool:
@@ -52,15 +52,16 @@ class AddItem(ItemAdder):
         pass
 
 
-class AddNewItem(ItemAdder):
-    """An ItemAdder using the default `WorkQueue.add_new_item` method, which checks if, at some
-    point during the test, `add_new_item` has returned both `True` and `False`."""
+class AddItem(ItemAdder):
+    """An ItemAdder using the default `WorkQueue.add_item` method, which checks
+    if, at some point during the test, `add_new_item` has returned both `True`
+    and `False`."""
 
     def __init__(self):
         self.reset()
 
     def add_item(self, queue: WorkQueue, db: Redis, item: Item) -> bool:
-        if queue.add_new_item(db, item):
+        if queue.add_item(db, item):
             self.seen_true = True
             return True
         else:
@@ -75,56 +76,14 @@ class AddNewItem(ItemAdder):
         self.seen_false = False
 
 
-class AddNewItemWithSleep(ItemAdder):
-    """An ItemAdder which uses a copy of `WorkQueue.add_new_item`, except it sleeps in the middle of
-    the transaction, and checks that this caused the transaction to fail at least once."""
-
-    def __init__(self):
-        self.reset()
-
-    def add_item(self, queue: WorkQueue, db: Redis, item: Item) -> bool:
-        while True:
-            try:
-                pipeline = db.pipeline(transaction=True)
-                pipeline.watch(queue._main_queue_key, queue._processing_key)
-
-                if (
-                    pipeline.lpos(queue._main_queue_key, item.id()) is not None
-                    or pipeline.lpos(queue._processing_key, item.id()) is not None
-                ):
-                    self.seen_unwatch = True
-                    pipeline.unwatch()
-                    return False
-
-                sleep(random.randint(1, 8)/20)
-                pipeline.multi()
-                queue.add_item_to_pipeline(pipeline, item)
-                pipeline.execute()
-                self.seen_tx_succeed = True
-                return True
-            except WatchError:
-                self.seen_tx_fail = True
-                continue
-
-    def check(self) -> bool:
-        return self.seen_tx_succeed and self.seen_tx_fail and self.seen_unwatch
-
-    def reset(self):
-        self.seen_tx_fail = False
-        self.seen_tx_succeed = False
-        self.seen_unwatch = False
-
-
 # Decide on the adder implementation to use, from the command line arguments.
 if len(sys.argv) > 2 and sys.argv[2] == "--add-item":
     adder = AddItem()
-elif len(sys.argv) > 2 and sys.argv[2] == "--add-new-item":
-    adder = AddNewItem()
-elif len(sys.argv) > 2 and sys.argv[2] == "--add-new-item-with-sleep":
-    adder = AddNewItemWithSleep()
+elif len(sys.argv) > 2 and sys.argv[2] == "--add-unique-item":
+    adder = AddUniqueItem()
 else:
     raise Exception(
-        "second argument should be `--add-item`, `--add-new-item` or `--add-new-item-with-sleep`"
+        "second argument should be `--add-item` or `--add-unique-item`"
     )
 
 python_queue = WorkQueue(KeyPrefix("python_jobs"))
