@@ -24,6 +24,12 @@ To do the same, but wit the DotNet implementation of the cleaner, use:
 ./run-test.sh -t go_jobs,python_jobs,rust_jobs,node_jobs,dotnet_jobs -c ./dotnet-cleaner/run.sh
 ```
 
+To do the same, but wit the Go implementation of the cleaner, use:
+
+```bash
+./run-test.sh -t go_jobs,python_jobs,rust_jobs,node_jobs,dotnet_jobs -c ./go-cleaner/run.sh
+```
+
 For a summary of other options, run:
 
 ```bash
