@@ -57,28 +57,36 @@ class ExternalCleaner:
             text=True,
         )
 
-    def clean(self, queue_name: str):
-        """Request and wait for a single queue to be cleaned."""
+    def clean(self, mode: str, queue_name: str):
+        """Request and wait for a single queue to be cleaned (mode should be "light" or "deep")."""
         if not self.check():
             raise Exception('cleaner process is dead')
 
         assert self.child.stdin is not None
-        self.child.stdin.write(queue_name + "\n")
+        self.child.stdin.write(mode + ":" +queue_name + "\n")
         self.child.stdin.flush()
 
         assert self.child.stdout is not None
         output = ""
-        while not output.startswith("cleaned "):
+        while not output.startswith(mode + " cleaned "):
             if output != "":
                 print(output)
             output = self.child.stdout.readline().strip()
-        assert output == "cleaned " + queue_name
+        assert output == mode + " cleaned " + queue_name
 
-    def clean_all(self):
-        """Clean all the work queues."""
+    def clean_all(self, mode: str):
+        """Clean all the work queues with the provided mode (either "light" or "deep")."""
         for queue_name in queue_names:
-            self.clean(queue_name)
-        self.clean(shared_queue_name)
+            self.clean(mode, queue_name)
+        self.clean(mode, shared_queue_name)
+
+    def light_clean_all(self):
+        """Light clean all the work queues."""
+        self.clean_all("light")
+
+    def deep_clean_all(self):
+        """Light clean all the work queues."""
+        self.clean_all("light")
 
     def check(self) -> bool:
         """Check that the process is still running."""
@@ -88,7 +96,9 @@ light_clean = python_light_clean
 deep_clean = python_deep_clean
 if len(sys.argv) > 3 and sys.argv[3] != "":
     # Pass the redis host to the cleaner command
-    light_clean = ExternalCleaner([sys.argv[3], sys.argv[1]]).clean_all
+    cleaner = ExternalCleaner([sys.argv[3], sys.argv[1]])
+    light_clean = cleaner.light_clean_all
+    deep_clean = cleaner.deep_clean_all
 
 counter = 0
 doom_counter = 0
