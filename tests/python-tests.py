@@ -96,12 +96,18 @@ while True:
             print("Completing")
             # If we succesfully completed the result, create two new shared jobs.
             if python_queue.complete(db, job):
+                if python_job_counter % 6 == 0:
+                    print("Double completing")
+                    if python_queue.complete(db, job):
+                        raise Exception("double completion should have failed");
+
                 print("Spawning shared jobs")
-                shared_queue.add_item(db, Item.from_json_data({
+                if not shared_queue.add_item(db, Item.from_json_data({
                     'a': 13,
                     'b': result,
-                }))
-                shared_queue.add_item(db, Item.from_json_data({
+                })):
+                    raise Exception("item was not added")
+                shared_queue.add_unique_item(db, Item.from_json_data({
                     'a': 17,
                     'b': result,
                 }))

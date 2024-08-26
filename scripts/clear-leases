@@ -15,4 +15,4 @@ if [ "$QUEUE" == "*" ]; then
 else
     echo Deleting all lease for queue: $QUEUE.
 fi
-redis-cli --raw KEYS "$QUEUE:leased_by_session:*" | xargs redis-cli DEL
+redis-cli --raw KEYS "$QUEUE:lease:*" | xargs redis-cli DEL

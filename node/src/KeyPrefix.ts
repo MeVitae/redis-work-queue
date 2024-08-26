@@ -18,7 +18,7 @@ export class KeyPrefix {
   /**
    * KeyPrefix instance prefix.
    */
-  private prefix: string;
+  prefix: string;
 
   /**
    * This creates a new instance with the prefix passed.

@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net6.0;net7.0</TargetFrameworks>
+    <TargetFrameworks>net6.0;net7.0;net8.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <PackageId>MeVitae.RedisWorkQueue</PackageId>
-    <Version>0.2.1</Version>
+    <Version>0.3.0</Version>
     <Authors>Jacob O'Toole, Nathan Lamplough, Ilie Mihai Alexandru</Authors>
     <Company>MeVitae</Company>
     <RepositoryUrl>https://github.com/MeVitae/redis-work-queue</RepositoryUrl>
@@ -22,7 +22,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="FreeRedis" Version="1.2.5" />
+    <PackageReference Include="FreeRedis" Version="1.3.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 

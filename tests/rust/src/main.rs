@@ -30,7 +30,7 @@ async fn async_main() -> RedisResult<()> {
         .next()
         .expect("first command line argument must be redis host");
     let db = &mut redis::Client::open(format!("redis://{host}/"))?
-        .get_async_connection()
+        .get_multiplexed_async_connection()
         .await?;
 
     let rust_results_key = KeyPrefix::new("results:rust:".to_string());
@@ -49,17 +49,18 @@ async fn async_main() -> RedisResult<()> {
             shared_job_counter += 1;
 
             // First, try to get a job from the shared job queue
-			let timeout = if shared_job_counter%5 == 0 {
+            let timeout = if shared_job_counter % 5 == 0 {
                 Some(Duration::from_secs(1))
             } else {
                 Some(Duration::ZERO)
             };
             println!("Leasing from shared with timeout: {:?}", timeout);
-            let Some(job) = shared_queue.lease(
-                db,
-                timeout,
-                Duration::from_secs(2),
-            ).await? else { continue };
+            let Some(job) = shared_queue
+                .lease(db, timeout, Duration::from_secs(2))
+                .await?
+            else {
+                continue;
+            };
             // Also, if we get 'unlucky', crash while completing the job.
             if shared_job_counter % 7 == 0 {
                 println!("Dropping job");
@@ -97,17 +98,18 @@ async fn async_main() -> RedisResult<()> {
             rust_job_counter += 1;
 
             // First, try to get a job from the rust job queue
-			let timeout = if shared_job_counter%6 == 0 {
+            let timeout = if shared_job_counter % 6 == 0 {
                 Some(Duration::from_secs(2))
             } else {
                 Some(Duration::ZERO)
             };
             println!("Leasing from rust with timeout: {:?}", timeout);
-            let Some(job) = rust_queue.lease(
-                db,
-                timeout,
-                Duration::from_secs(1),
-            ).await? else { continue };
+            let Some(job) = rust_queue
+                .lease(db, timeout, Duration::from_secs(1))
+                .await?
+            else {
+                continue;
+            };
             // Also, if we get 'unlucky', crash while completing the job.
             if rust_job_counter % 7 == 0 {
                 println!("Dropping job");
@@ -132,6 +134,13 @@ async fn async_main() -> RedisResult<()> {
             if rust_job_counter % 29 != 0 {
                 println!("Completing");
                 if rust_queue.complete(db, &job).await? {
+                    if rust_job_counter % 6 == 0 {
+                        println!("Double completing");
+                        if rust_queue.complete(db, &job).await? {
+                            panic!("double completion should have failed!");
+                        }
+                    }
+
                     println!("Spawning shared jobs");
                     // If we succesfully completed the result, create two new shared jobs.
                     let item = Item::from_json_data(&SharedJobData {
@@ -139,14 +148,16 @@ async fn async_main() -> RedisResult<()> {
                         b: job.data[0] as i32,
                     })
                     .unwrap();
-                    shared_queue.add_item(db, &item).await?;
+                    if !shared_queue.add_item(db, &item).await? {
+                        panic!("item was not added");
+                    }
 
                     let item = Item::from_json_data(&SharedJobData {
                         a: 5,
                         b: job.data[0] as i32,
                     })
                     .unwrap();
-                    shared_queue.add_item(db, &item).await?;
+                    shared_queue.add_unique_item(db, &item).await?;
                 }
             } else {
                 println!("Dropping");

@@ -70,7 +70,7 @@ class Program
                 Console.WriteLine("Result: ", jsonResult);
 
                 if (sharedJobCounter % 12 == 0)
-                    Thread.Sleep(1000*(sharedJobCounter % 4));
+                    Thread.Sleep(1000 * (sharedJobCounter % 4));
 
                 db.Set(sharedResultsKey.Of(job.ID), jsonResult);
 
@@ -106,7 +106,7 @@ class Program
                 Console.WriteLine($"Result: {result}");
 
                 if (dotNetJobCounter % 25 == 0)
-                    Thread.Sleep(1000*(sharedJobCounter % 20));
+                    Thread.Sleep(1000 * (sharedJobCounter % 20));
 
                 db.Set(dotNetResultsKey.Of(job.ID), new byte[1] { (byte)result });
 
@@ -116,13 +116,20 @@ class Program
 
                     if (dotNetQueue.Complete(db, job))
                     {
+                        if (dotNetJobCounter % 6 == 0)
+                        {
+                            Console.WriteLine("Double completing");
+                            if (dotNetQueue.Complete(db, job))
+                                throw new Exception("double completion should have failed!");
+                        }
+
                         Console.WriteLine("Spawning shared jobs");
-                        sharedQueue.AddItem(db, Item.FromJson(new SharedJobData()
+                        if (!sharedQueue.AddItem(db, Item.FromJson(new SharedJobData()
                         {
                             a = 19,
                             b = result
-                        }));
-                        sharedQueue.AddItem(db, Item.FromJson(new SharedJobData()
+                        }))) throw new Exception("item was not added");
+                        sharedQueue.AddUniqueItem(db, Item.FromJson(new SharedJobData()
                         {
                             a = 23,
                             b = result
