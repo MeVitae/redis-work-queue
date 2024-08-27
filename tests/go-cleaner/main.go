@@ -30,14 +30,17 @@ func main() {
 		instruction = instruction[:len(instruction)-1]
 		if queueName, ok := strings.CutPrefix(instruction, "light:"); ok {
 			queue := workqueue.NewWorkQueue(workqueue.KeyPrefix(queueName))
-			queue.LightClean(ctx, db)
+			err = queue.LightClean(ctx, db)
 			fmt.Println("light cleaned", queueName)
 		} else if queueName, ok := strings.CutPrefix(instruction, "deep:"); ok {
 			queue := workqueue.NewWorkQueue(workqueue.KeyPrefix(queueName))
-			queue.DeepClean(ctx, db)
+			err = queue.DeepClean(ctx, db)
 			fmt.Println("deep cleaned", queueName)
 		} else {
 			panic("invalid cleaning mode")
+		}
+		if err != nil {
+			panic(err)
 		}
 	}
 }
