@@ -261,7 +261,7 @@ func (workQueue *WorkQueue) DeepClean(ctx context.Context, db *redis.Client) err
 	}
 	mainQueue := mainQueueRes.Val()
 	for _, itemDataKey := range itemDataKeys.Val() {
-		itemId := itemDataKey[:len(workQueue.itemDataKey)]
+		itemId := itemDataKey[len(workQueue.itemDataKey):]
 		leaseExists, err := workQueue.leaseExists(ctx, db, itemId)
 		if err != nil {
 			return fmt.Errorf("failed to check if lease exists for %s: %w", itemId, err)
