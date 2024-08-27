@@ -207,7 +207,7 @@ func (workQueue *WorkQueue) Lease(
 }
 
 func (workQueue *WorkQueue) leaseExists(ctx context.Context, db *redis.Client, itemId string) (bool, error) {
-	exists, err := db.Exists(ctx, workQueue.itemDataKey.Of(itemId)).Result()
+	exists, err := db.Exists(ctx, workQueue.leaseKey.Of(itemId)).Result()
 	return exists > 0, err
 }
 
