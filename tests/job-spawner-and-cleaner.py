@@ -86,7 +86,7 @@ class ExternalCleaner:
 
     def deep_clean_all(self):
         """Light clean all the work queues."""
-        self.clean_all("light")
+        self.clean_all("deep")
 
     def check(self) -> bool:
         """Check that the process is still running."""
