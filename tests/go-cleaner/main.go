@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -25,6 +26,9 @@ func main() {
 	for {
 		instruction, err := stdin.ReadString('\n')
 		if err != nil {
+			if err == io.EOF {
+				break
+			}
 			panic(err)
 		}
 		instruction = instruction[:len(instruction)-1]
