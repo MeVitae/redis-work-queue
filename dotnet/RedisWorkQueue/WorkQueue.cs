@@ -196,7 +196,7 @@ namespace RedisWorkQueue
                     // We also check the item actually exists before pushing it back to the main queue
                     if (db.Exists(ItemDataKey.Of(itemId)))
                     {
-                        Console.WriteLine($"{itemId} has not lease, it will be reset");
+                        Console.WriteLine($"{itemId} has no lease, it will be reset");
                         using var pipe = db.StartPipe();
                         pipe.LRem(ProcessingKey, 0, itemId);
                         pipe.LPush(MainQueueKey, itemId);
@@ -231,7 +231,7 @@ namespace RedisWorkQueue
                 // be reset.
                 if (!mainQueue.Contains(itemId) && !LeaseExists(db, itemId))
                 {
-                    Console.WriteLine($"{itemId} has not lease, it will be reset");
+                    Console.WriteLine($"{itemId} has no lease, it will be reset");
                     using var pipe = db.StartPipe();
                     pipe.LRem(ProcessingKey, 0, itemId);
                     pipe.LPush(MainQueueKey, itemId);
