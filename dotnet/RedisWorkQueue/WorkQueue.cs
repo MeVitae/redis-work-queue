@@ -224,7 +224,6 @@ namespace RedisWorkQueue
                 itemDataKeys = (string[])results[0];
                 mainQueue = (string[])results[1];
             }
-            var processing = db.LRange(ProcessingKey, 0, -1);
             foreach (string itemDataKey in itemDataKeys)
             {
                 string itemId = itemDataKey.Substring(ItemDataKey.Prefix.Length);
