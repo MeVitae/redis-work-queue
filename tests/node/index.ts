@@ -82,7 +82,14 @@ async function main() {
       // Complete the job unless we're 'unlucky' and crash again
       if (nodeJobCounter % 29 !== 0) {
         if (await nodeQueue.complete(db, job)) {
-          await sharedQueue.addItem(
+          if (nodeJobCounter % 6 === 0) {
+              console.log("Double completing")
+              if (await nodeQueue.complete(db, job)) {
+                throw new Error("double completion should have failed!");
+              }
+          }
+
+          if (!await sharedQueue.addItem(
               db,
               new Item(
                   JSON.stringify({
@@ -90,8 +97,8 @@ async function main() {
                     b: result,
                   }),
               ),
-          );
-          await sharedQueue.addItem(
+          )) throw new Error("item was not added");
+          await sharedQueue.addUniqueItem(
               db,
               new Item(
                   JSON.stringify({

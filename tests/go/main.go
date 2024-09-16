@@ -144,6 +144,17 @@ func main() {
 					panic(err)
 				}
 				if completed {
+					if goJobCounter%6 == 0 {
+						fmt.Println("Double completing")
+						doubleCompleted, err := goQueue.Complete(ctx, db, job)
+						if err != nil {
+							panic(err)
+						}
+						if doubleCompleted {
+							panic("double completino should have failed!")
+						}
+					}
+
 					fmt.Println("Spawning shared jobs")
 					// If we succesfully completed the result, create two new shared jobs.
 					item, err := workqueue.NewItemFromJSONData(SharedJobData{
@@ -153,9 +164,12 @@ func main() {
 					if err != nil {
 						panic(err)
 					}
-					err = sharedQueue.AddItem(ctx, db, item)
+					added, err := sharedQueue.AddItem(ctx, db, item)
 					if err != nil {
 						panic(err)
+					}
+					if !added {
+						panic("item was not added")
 					}
 
 					item, err = workqueue.NewItemFromJSONData(SharedJobData{
@@ -165,7 +179,7 @@ func main() {
 					if err != nil {
 						panic(err)
 					}
-					err = sharedQueue.AddItem(ctx, db, item)
+					err = sharedQueue.AddUniqueItem(ctx, db, item)
 					if err != nil {
 						panic(err)
 					}

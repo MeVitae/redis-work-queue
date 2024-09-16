@@ -18,6 +18,18 @@ From the `tests` directory, to run the integration tests with all languages, use
 ./run-test.sh -t go_jobs,python_jobs,rust_jobs,node_jobs,dotnet_jobs
 ```
 
+To do the same, but wit the DotNet implementation of the cleaner, use:
+
+```bash
+./run-test.sh -t go_jobs,python_jobs,rust_jobs,node_jobs,dotnet_jobs -c ./dotnet-cleaner/run.sh
+```
+
+To do the same, but wit the Go implementation of the cleaner, use:
+
+```bash
+./run-test.sh -t go_jobs,python_jobs,rust_jobs,node_jobs,dotnet_jobs -c ./go-cleaner/run.sh
+```
+
 For a summary of other options, run:
 
 ```bash
@@ -38,13 +50,18 @@ For example:
 
 ##### --host
 
-This can be used to set a specific redis server, the default is `localhost`.
+This can be used to set a specific redis server, the default is `localhost:6379`.
 
 For example:
 
 ```bash
 ./run-test.sh --tests "go_jobs,python_jobs" --host example.server.net:port
 ```
+
+##### --cleaner
+
+This sets a custom binary to be used to clean the work queues, see the docs in
+[job-spawner-and-cleaner.py](./job-spawner-and-cleaner.py).
 
 ## Unit tests also exist
 

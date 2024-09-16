@@ -1,4 +1,4 @@
-module github.com/mevitae/redis-work-queue/tests/go
+module github.com/mevitae/redis-work-queue/tests/go-cleaner
 
 replace github.com/mevitae/redis-work-queue/go => ../../go
 

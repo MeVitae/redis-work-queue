@@ -1,5 +1,6 @@
 import sys
 import json
+import subprocess
 from time import sleep
 
 import redis
@@ -11,17 +12,93 @@ from redis_work_queue import KeyPrefix, Item, WorkQueue
 if len(sys.argv) < 2:
     raise Exception("first command line argument must be redis host")
 host = sys.argv[1].split(":")
-queue_list_names = sys.argv[2].split(" ")
+if len(sys.argv) < 3:
+    raise Exception("second command line argument must be space-separated list of queue names (don't ask me why an argument is space separated)")
+queue_names = sys.argv[2].split(" ")
 
 db = redis.Redis(host=host[0], port=int(host[1]) if len(host) > 1 else 6379)
 if len(db.keys("*")) > 0:
     raise Exception("redis database isn't clean")
 
-shared_queue = WorkQueue(KeyPrefix("shared_jobs"))
+shared_queue_name = "shared_jobs"
+shared_queue = WorkQueue(KeyPrefix(shared_queue_name))
 queue_list = list(map(
     lambda name: WorkQueue(KeyPrefix(name)),
-    queue_list_names,
+    queue_names,
 ))
+
+def python_light_clean():
+    for queue in queue_list:
+        queue.light_clean(db)
+    shared_queue.light_clean(db)
+
+def python_deep_clean():
+    for queue in queue_list:
+        queue.deep_clean(db)
+    shared_queue.deep_clean(db)
+
+class ExternalCleaner:
+    """This wraps an external process to be used for queue cleaning.
+
+    The process should read line from stdin and write lines to stdout.
+
+    Upon reading a line, that line should be interpreted as a queue name, and that queue should be
+    cleaned. After the queue has been cleaned, the program should write to stdout "cleaned ",
+    followed by the name of the queue, followed by a newline.
+
+    The program must process the cleaning requests in the order they are sent."""
+
+    def __init__(self, command: list[str]):
+        self.child: subprocess.Popen = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=sys.stderr,
+            text=True,
+        )
+
+    def clean(self, mode: str, queue_name: str):
+        """Request and wait for a single queue to be cleaned (mode should be "light" or "deep")."""
+        if not self.check():
+            raise Exception('cleaner process is dead')
+
+        assert self.child.stdin is not None
+        self.child.stdin.write(mode + ":" +queue_name + "\n")
+        self.child.stdin.flush()
+
+        assert self.child.stdout is not None
+        output = ""
+        while not output.startswith(mode + " cleaned "):
+            if output != "":
+                print(output)
+            output = self.child.stdout.readline().strip()
+        assert output == mode + " cleaned " + queue_name
+
+    def clean_all(self, mode: str):
+        """Clean all the work queues with the provided mode (either "light" or "deep")."""
+        for queue_name in queue_names:
+            self.clean(mode, queue_name)
+        self.clean(mode, shared_queue_name)
+
+    def light_clean_all(self):
+        """Light clean all the work queues."""
+        self.clean_all("light")
+
+    def deep_clean_all(self):
+        """Light clean all the work queues."""
+        self.clean_all("deep")
+
+    def check(self) -> bool:
+        """Check that the process is still running."""
+        return self.child.poll() is None
+
+light_clean = python_light_clean
+deep_clean = python_deep_clean
+if len(sys.argv) > 3 and sys.argv[3] != "":
+    # Pass the redis host to the cleaner command
+    cleaner = ExternalCleaner([sys.argv[3], sys.argv[1]])
+    light_clean = cleaner.light_clean_all
+    deep_clean = cleaner.deep_clean_all
 
 counter = 0
 doom_counter = 0
@@ -57,10 +134,24 @@ while doom_counter < 20:
                 queue.add_item(db, Item(bytes([n])))
     else:
         # Otherwise, clean!
-        print("Cleaning")
-        for queue in queue_list:
-            queue.light_clean(db)
-        shared_queue.light_clean(db)
+        print("Cleaning " + str(counter % 13))
+        # This creates all the possible messed-up cleaning cases:
+        if counter % 13 == 2 or counter % 13 == 3:
+            # Occasionally remove items from processing
+            db.rpop(KeyPrefix(shared_queue_name).of(":processing"))
+        elif counter % 13 == 4:
+            # Occasionally remove items from queue
+            db.rpop(KeyPrefix(shared_queue_name).of(":queue"))
+        elif counter % 13 == 5:
+            # Occasionally copy items from queue -> processing
+            items = db.lrange(KeyPrefix(shared_queue_name).of(":queue"), 0, 1)
+            print(items)
+            if len(items) > 0:
+                db.lpush(KeyPrefix(shared_queue_name).of(":processing"), items[0])
+        elif counter % 13 == 6:
+            # Occasionally deep clean
+            deep_clean()
+        light_clean()
     # The `doom_counter` counts the number of consecutive times all the lengths are 0.
     doom_counter = doom_counter + 1 if all(map(
         lambda queue: queue.queue_len(db) == 0 and queue.processing(db) == 0,
@@ -98,15 +189,15 @@ expecting_dict_config = {
 }
 
 
-for queue_name in queue_list_names[:]:
+for queue_name in queue_names[:]:
     if queue_name not in expecting_dict_config:
-        queue_list_names.remove(queue_name)
+        queue_names.remove(queue_name)
 
 
 keys_to_delete = []
 
 for queue_name in expecting_dict_config:
-    if queue_name not in queue_list_names:
+    if queue_name not in queue_names:
         keys_to_delete.append(queue_name)
 
 for queue_name in keys_to_delete:
@@ -152,14 +243,15 @@ for key in db.keys("*"):
             raise Exception('found unexpected key: ' + key)
 
 updated_names = []
-for name in queue_list_names:
+for name in queue_names:
     updated_names.append(name.replace("_jobs", ""))
 
 total_count_keys = 0
 for key in shared_counts.keys():
     total_count_keys += shared_counts[key]
 
-maximum_allowed = total_count_keys/len(shared_counts)*1.2
+minimum_allowed = total_count_keys/len(shared_counts)*0.7
+maximum_allowed = total_count_keys/len(shared_counts)*1.3
 
 print("Maximum number of job counts:", maximum_allowed)
 
@@ -167,4 +259,5 @@ for key in shared_counts.keys():
     assert key in updated_names
     # Check that it's fairly well balanced
     print(key, "Job counts:", shared_counts[key])
+    assert minimum_allowed < shared_counts[key]
     assert shared_counts[key] < maximum_allowed

@@ -42,8 +42,16 @@ assert bytes_item.data_json() == [1, 2, 3]
 ```
 
 ### Add an item to a work queue
+
 ```python
 work_queue.add_item(db, item)
+```
+
+If you know that items have unique IDs, which aren't the same as any already in the queue, you can
+instead use:
+
+```python
+work_queue.add_unique_item(db, item)
 ```
 
 ## Completing work

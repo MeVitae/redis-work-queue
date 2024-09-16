@@ -1,6 +1,6 @@
 {
   "name": "@mevitae/redis-work-queue",
-  "version": "0.1.5",
+  "version": "0.3.0",
   "main": "./src/WorkQueue.ts",
   "description": "A work queue, on top of a redis database, with implementations in Python, Rust, Go, Node.js (TypeScript) and Dotnet (C#).",
   "keywords": [

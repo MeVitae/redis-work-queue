@@ -261,15 +261,32 @@ impl WorkQueue {
             main_queue_key: name.of(":queue"),
             processing_key: name.of(":processing"),
             //cleaning_key: name.of(":cleaning"),
-            lease_key: name.and(":leased_by_session:"),
+            lease_key: name.and(":lease:"),
             item_data_key: name.and(":item:"),
         }
     }
 
-    /// Add an item to the work queue. This adds the redis commands onto the pipeline passed.
+    /// Add an item to the work queue.
     ///
-    /// Use [`WorkQueue::add_item`] if you don't want to pass a pipeline directly.
-    pub fn add_item_to_pipeline(&self, pipeline: &mut redis::Pipeline, item: &Item) {
+    /// If an item with the same ID already exists, this item is not added, and `false` is returned. Otherwise, if the item is added `true` is returned.
+    ///
+    /// If you know the item ID is unique, and not already in the queue, use the optimised
+    /// [`WorkQueue::add_unique_item`] instead.
+    pub async fn add_item<C: AsyncCommands>(&self, db: &mut C, item: &Item) -> RedisResult<bool> {
+        let added = db
+            .set_nx(self.item_data_key.of(&item.id), item.data.as_ref())
+            .await?;
+        if added {
+            db.lpush(&self.main_queue_key, &item.id).await?;
+        }
+        Ok(added)
+    }
+
+    /// Add an item, which is known to have an ID not already in the queue, to the work queue. This
+    /// adds the redis commands onto the pipeline passed.
+    ///
+    /// Use [`WorkQueue::add_unique_item`] if you don't want to pass a pipeline directly.
+    pub fn add_unique_item_to_pipeline(&self, pipeline: &mut redis::Pipeline, item: &Item) {
         // Add the item data
         // NOTE: it's important that the data is added first, otherwise someone could pop the item
         // before the data is ready
@@ -278,12 +295,16 @@ impl WorkQueue {
         pipeline.lpush(&self.main_queue_key, &item.id);
     }
 
-    /// Add an item to the work queue.
+    /// Add an item, which is known to have an ID not already in the queue, to the work queue.
     ///
     /// This creates a pipeline and executes it on the database.
-    pub async fn add_item<C: AsyncCommands>(&self, db: &mut C, item: &Item) -> RedisResult<()> {
+    pub async fn add_unique_item<C: AsyncCommands>(
+        &self,
+        db: &mut C,
+        item: &Item,
+    ) -> RedisResult<()> {
         let mut pipeline = Box::new(redis::pipe());
-        self.add_item_to_pipeline(&mut pipeline, item);
+        self.add_unique_item_to_pipeline(&mut pipeline, item);
         pipeline.query_async(db).await
     }
 
@@ -322,44 +343,48 @@ impl WorkQueue {
         timeout: Option<Duration>,
         lease_duration: Duration,
     ) -> RedisResult<Option<Item>> {
-        // First, to get an item, we try to move an item from the main queue to the processing list.
-        let item_id: Option<String> = match timeout {
-            Some(Duration::ZERO) => {
-                db.rpoplpush(&self.main_queue_key, &self.processing_key)
+        loop {
+            // First, to get an item, we try to move an item from the main queue to the processing list.
+            let Some(item_id): Option<String> = (match timeout {
+                Some(Duration::ZERO) => {
+                    db.rpoplpush(&self.main_queue_key, &self.processing_key)
+                        .await?
+                }
+                _ => {
+                    db.brpoplpush(
+                        &self.main_queue_key,
+                        &self.processing_key,
+                        timeout.map(|d| d.as_secs() as f64).unwrap_or(0.),
+                    )
                     .await?
-            }
-            _ => {
-                db.brpoplpush(
-                    &self.main_queue_key,
-                    &self.processing_key,
-                    timeout.map(|d| d.as_secs() as usize).unwrap_or(0),
-                )
-                .await?
-            }
-        };
+                }
+            }) else {
+                return Ok(None);
+            };
 
-        // If we got an item, fetch the associated data.
-        let item = match item_id {
-            Some(item_id) => Item {
-                data: db
-                    .get::<_, Vec<u8>>(self.item_data_key.of(&item_id))
-                    .await?
-                    .into_boxed_slice(),
+            // If we got an item, fetch the associated data.
+            let item_data: Vec<u8> = match db.get(self.item_data_key.of(&item_id)).await? {
+                Some(item_data) => item_data,
+                // If the item doesn't actually exist, and there's no timeout, just try again.
+                None if timeout == None => continue,
+                // If there was a timeout, we return early.
+                None => return Ok(None),
+            };
+
+            // Now setup the lease item.
+            // NOTE: Racing for a lease is ok
+            db.set_ex(
+                self.lease_key.of(&item_id),
+                &self.session,
+                lease_duration.as_secs(),
+            )
+            .await?;
+
+            return Ok(Some(Item {
+                data: item_data.into_boxed_slice(),
                 id: item_id,
-            },
-            None => return Ok(None),
-        };
-
-        // Now setup the lease item.
-        // NOTE: Racing for a lease is ok
-        db.set_ex(
-            self.lease_key.of(&item.id),
-            &self.session,
-            lease_duration.as_secs() as usize,
-        )
-        .await?;
-
-        Ok(Some(item))
+            }));
+        }
     }
 
     /// Marks a job as completed and remove it from the work queue. After `complete` has been called
@@ -369,20 +394,17 @@ impl WorkQueue {
     /// was the first worker to call `complete`*. So, while lease might give the same job to
     /// multiple workers, complete will return `true` for only one worker.
     pub async fn complete<C: AsyncCommands>(&self, db: &mut C, item: &Item) -> RedisResult<bool> {
-        let removed: usize = db.lrem(&self.processing_key, 0, &item.id).await?;
-        if removed == 0 {
-            return Ok(false);
-        }
         // If we did actually remove it, delete the item data and lease.
         // If we didn't really remove it, it's probably been returned to the work queue so the
         // data is still needed and the lease might not be ours (if it is still ours, it'll
         // expire anyway).
-        redis::pipe()
+        let (items_deleted, (), ()): (usize, (), ()) = redis::pipe()
             .del(self.item_data_key.of(&item.id))
+            .lrem(&self.processing_key, 0, &item.id)
             .del(self.lease_key.of(&item.id))
             .query_async(db)
             .await?;
-        Ok(true)
+        Ok(items_deleted > 0)
     }
 }
 
