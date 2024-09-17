@@ -29,9 +29,13 @@ func NewWorkQueues(namePrefix string, db *redis.Client) *WorkQueues {
 	}
 }
 
+func (queues *WorkQueues) getWorkQueue(name string) workqueue.WorkQueue {
+	return workqueue.NewWorkQueue(queues.NamePrefix.Concat(name))
+}
+
 func (queues *WorkQueues) GetWorkQueue(name string) wqautoscale.WorkQueue {
 	return &WrappedWorkQueue{
-		workQueue: workqueue.NewWorkQueue(queues.NamePrefix.Concat(name)),
+		workQueue: queues.getWorkQueue(name),
 		db:        queues.DB,
 	}
 }
@@ -88,15 +92,17 @@ func LoadConfig(configPath string) (Config, error) {
 
 // InClusterAutoscaler creates an autoscaler for scaling deployments within the cluster the process
 // is running within.
+//
+// It also returns a [Cleaner], which can be used to clean work queues.
 func InClusterAutoscaler(
 	ctx context.Context,
 	configPath string,
 	time int64,
 	scaleReporter interfaces.ScaleReporter,
-) (*wqautoscale.AutoScale, error) {
+) (*wqautoscale.AutoScale, *Cleaner, error) {
 	config, err := LoadConfig(configPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	db := redis.NewClient(&config.Redis)
@@ -104,14 +110,14 @@ func InClusterAutoscaler(
 
 	deployments, err := scale.InClusterDeployments(config.Namespace)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var deploymentsInterface interfaces.Deployments = deployments
 	if config.SegmentedDeployments {
 		deploymentsInterface = interfaces.NewSegmentedDeployments(deploymentsInterface)
 	}
 
-	return wqautoscale.NewAutoScale(
+	autoscale, err := wqautoscale.NewAutoScale(
 		ctx,
 		workQueues,
 		deploymentsInterface,
@@ -119,4 +125,21 @@ func InClusterAutoscaler(
 		time,
 		scaleReporter,
 	)
+	return autoscale, &Cleaner{workQueues}, err
+}
+
+type Cleaner struct {
+	workQueues *WorkQueues
+}
+
+// LightClean the named queue.
+func (cleaner *Cleaner) LightClean(ctx context.Context, name string) error {
+	wq := cleaner.workQueues.getWorkQueue(name)
+	return wq.LightClean(ctx, cleaner.workQueues.DB)
+}
+
+// DeepClean the named queue.
+func (cleaner *Cleaner) DeepClean(ctx context.Context, name string) error {
+	wq := cleaner.workQueues.getWorkQueue(name)
+	return wq.DeepClean(ctx, cleaner.workQueues.DB)
 }
