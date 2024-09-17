@@ -58,6 +58,10 @@ func NewAutoScale(
 	}, err
 }
 
+func (autoscaler *AutoScale) QueueNames() []string {
+	return append(make([]string, 0, len(autoscaler.order)), autoscaler.order...)
+}
+
 // Scale the workers at the provided time.
 func (autoscaler *AutoScale) Scale(ctx context.Context, time int64) error {
 	// This will store a map of job names to the total rate of incomings jobs.
