@@ -75,22 +75,22 @@ func (wrapped *WrappedWorkQueue) Counts(ctx context.Context) (queueLen, processi
 
 type Config struct {
 	// Namespace of the k8s deployments.
-	Namespace string
+	Namespace string `yaml:"namespace" json:"namespace"`
 	// Redis options for accessing work queues.
-	Redis redis.Options
+	Redis redis.Options `yaml:"redis" json:"redis"`
 	// RedisOverride allows setting different redis options for specific queue names.
 	//
 	// It maps queue name (without prefix) to redis options. If a queue is not in this map, the
 	// Redis options from the previous field are used.
-	RedisOverride map[string]redis.Options
+	RedisOverride map[string]redis.Options `yaml:"redisOverride" json:"redisOverride"`
 	// QueueNamePrefix is the prefix used for generating queue names.
-	QueueNamePrefix string `yaml:"queueNamePrefix"`
+	QueueNamePrefix string `yaml:"queueNamePrefix" json:"queueNamePrefix"`
 	// SegmentedDeployments determines if the k8s deployments interface should be wrapped in `SegmentedDeployments`.
 	//
 	// This allows deployment counts to be segmented.
-	SegmentedDeployments bool `yaml:"segmentedDeployments"`
+	SegmentedDeployments bool `yaml:"segmentedDeployments" json:"segmentedDeployments"`
 	// Autoscale config.
-	Autoscale wqautoscale.Config
+	Autoscale wqautoscale.Config `yaml:"autoscale" json:"autoscale"`
 }
 
 func LoadConfig(configPath string) (Config, error) {
