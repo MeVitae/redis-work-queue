@@ -59,7 +59,11 @@ func NewAutoScale(
 }
 
 func (autoscaler *AutoScale) QueueNames() []string {
-	return append(make([]string, 0, len(autoscaler.order)), autoscaler.order...)
+	names := make([]string, 0, len(autoscaler.order))
+	for _, jobName := range autoscaler.order {
+		names = append(names, autoscaler.jobs[jobName].QueueName)
+	}
+	return names
 }
 
 // Scale the workers at the provided time.
