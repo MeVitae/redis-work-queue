@@ -47,7 +47,7 @@ spec:
       serviceAccountName: autoscale-bot
       containers:
       - name: autoscale-daemon
-        image: jot85/redis-work-queue-k8s-autoscale:0.3.3
+        image: jot85/redis-work-queue-k8s-autoscale:0.3.4
         resources:
           requests:
             cpu: 50m
