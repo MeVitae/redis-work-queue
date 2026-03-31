@@ -1,7 +1,6 @@
 use std::time::Duration;
 
-use futures_lite::future;
-use redis::{AsyncCommands, RedisResult};
+use redis_work_queue::redis::{self, AsyncCommands, RedisResult};
 use serde::{Deserialize, Serialize};
 
 use redis_work_queue::{Item, KeyPrefix, WorkQueue};
@@ -21,7 +20,7 @@ struct SharedJobResult {
 }
 
 fn main() -> RedisResult<()> {
-    future::block_on(async_main())
+    smol::block_on(async_main())
 }
 
 async fn async_main() -> RedisResult<()> {
@@ -32,6 +31,7 @@ async fn async_main() -> RedisResult<()> {
     let db = &mut redis::Client::open(format!("redis://{host}/"))?
         .get_multiplexed_async_connection()
         .await?;
+    db.set_response_timeout(Duration::MAX);
 
     let rust_results_key = KeyPrefix::new("results:rust:".to_string());
     let shared_results_key = KeyPrefix::new("results:shared:".to_string());
@@ -85,7 +85,7 @@ async fn async_main() -> RedisResult<()> {
             }
 
             // Store the result
-            db.set(shared_results_key.of(&job.id), result_json).await?;
+            let () = db.set(shared_results_key.of(&job.id), result_json).await?;
 
             // Complete the job unless we're 'unlucky' and crash again
             if shared_job_counter % 29 != 0 {
@@ -128,7 +128,7 @@ async fn async_main() -> RedisResult<()> {
             }
 
             // Store the result
-            db.set(rust_results_key.of(&job.id), vec![result]).await?;
+            let () = db.set(rust_results_key.of(&job.id), vec![result]).await?;
 
             // Complete the job unless we're 'unlucky' and crash again
             if rust_job_counter % 29 != 0 {

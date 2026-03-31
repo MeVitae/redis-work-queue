@@ -1,6 +1,6 @@
 [package]
 name = "redis-work-queue"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 license = "MIT"
 description = "A work queue, on top of a redis database, with implementations in Python, Rust, Go, Node.js (TypeScript) and Dotnet (C#)."
@@ -10,6 +10,22 @@ keywords = ["redis", "queue", "work", "cross-platform", "platform"]
 categories = ["api-bindings", "web-programming", "asynchronous"]
 readme = "../README.md"
 
+[features]
+default = ["tokio-comp", "tls-rustls", "tokio-rustls-comp"]
+
+tokio-comp = ["redis/tokio-comp"]
+smol-comp = ["redis/smol-comp"]
+
+tls-rustls = ["redis/tls-rustls"]
+tokio-rustls-comp = ["redis/tokio-rustls-comp"]
+smol-rustls-comp = ["redis/smol-rustls-comp"]
+
+tls-native-tls = ["redis/tls-native-tls"]
+tokio-native-tls-comp = ["redis/tokio-native-tls-comp"]
+smol-native-tls-comp = ["redis/smol-native-tls-comp"]
+
+tls-rustls-webpki-roots = ["redis/tls-rustls-webpki-roots"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -17,15 +33,15 @@ serde_json = "1"
 futures = "0.3"
 
 [dependencies.redis]
-version = "0.26"
-features = ["aio", "async-std-comp", "connection-manager"]
+version = "^1.1.0"
+features = ["aio", "connection-manager"]
 
 [dependencies.serde]
 version = "1"
 features = ["derive"]
 
 [dependencies.uuid]
-version = "1.3"
+version = "1.23"
 features = [
     "v4",                # Lets you generate random UUIDs
     "fast-rng",          # Use a faster (but still sufficiently random) RNG

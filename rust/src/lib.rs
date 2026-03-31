@@ -13,8 +13,11 @@
 //!
 //! let host = "your-redis-server";
 //! let db = &mut redis::Client::open(format!("redis://{host}/"))?
-//!     .get_async_connection()
+//!     .get_multiplexed_async_connection()
 //!     .await?;
+//! // If you're planning on waiting for jobs with blocking operations, you might want a longer
+//! // timeout, but make sure you've considered the consequences.
+//! //db.set_response_timeout(Duration::from_secs());
 //!
 //! let work_queue = WorkQueue::new(KeyPrefix::from("example_work_queue"));
 //! # Ok(())
@@ -123,6 +126,7 @@
 use std::future::Future;
 use std::time::Duration;
 
+pub use redis;
 use redis::{AsyncCommands, RedisResult};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -277,7 +281,7 @@ impl WorkQueue {
             .set_nx(self.item_data_key.of(&item.id), item.data.as_ref())
             .await?;
         if added {
-            db.lpush(&self.main_queue_key, &item.id).await?;
+            let () = db.lpush(&self.main_queue_key, &item.id).await?;
         }
         Ok(added)
     }
@@ -373,12 +377,13 @@ impl WorkQueue {
 
             // Now setup the lease item.
             // NOTE: Racing for a lease is ok
-            db.set_ex(
-                self.lease_key.of(&item_id),
-                &self.session,
-                lease_duration.as_secs(),
-            )
-            .await?;
+            let () = db
+                .set_ex(
+                    self.lease_key.of(&item_id),
+                    &self.session,
+                    lease_duration.as_secs(),
+                )
+                .await?;
 
             return Ok(Some(Item {
                 data: item_data.into_boxed_slice(),
