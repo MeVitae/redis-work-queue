@@ -2,7 +2,7 @@
 using System.IO;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Text;
-using Newtonsoft.Json;
+using System.Text.Json;
 
 namespace RedisWorkQueue
 {
@@ -64,7 +64,7 @@ namespace RedisWorkQueue
         /// <returns>A new instance of the Item class with the serialized JSON data.</returns>
         public static Item FromJson(object data, string? id = null)
         {
-            return new Item(JsonConvert.SerializeObject(data), id);
+            return new Item(JsonSerializer.Serialize(data), id);
         }
 
         /// <summary>
@@ -74,7 +74,7 @@ namespace RedisWorkQueue
         /// <returns>The deserialized object of type T. Returns null if the deserialization fails.</returns>
         public T? DataJson<T>()
         {
-            return JsonConvert.DeserializeObject<T>(Encoding.UTF8.GetString(Data));
+            return JsonSerializer.Deserialize<T>(Encoding.UTF8.GetString(Data));
         }
     }
 }
